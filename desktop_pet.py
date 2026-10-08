@@ -87,7 +87,6 @@ class DesktopPet(QWidget):
         # Estado inicial
         default_state = self.character.config["default_state"]
         self.change_state(default_state)
-        self.limit_scale_to_screen()
 
         # Comportamiento autónomo
         self.behavior = BehaviorScheduler(
@@ -173,41 +172,6 @@ class DesktopPet(QWidget):
                 change_state_callback=self.change_state,
             )
 
-    def limit_scale_to_screen(self):
-        # Impide que la pet crezca más que la pantalla.
-        #
-        # En Wayland la pet no puede posicionarse a sí misma: el arrastre lo
-        # hace el compositor (KWin), que mantiene la ventana dentro de la
-        # pantalla. Si la ventana es más alta que la pantalla, la pet nunca
-        # alcanza el borde superior y se queda a ~200px del techo; abajo no se
-        # nota porque sí puede apoyarse en el borde inferior. KWin además
-        # respeta el punto de agarre, así que cuanto más abajo cojas la pet,
-        # más hueco queda arriba.
-        #
-        # Con el tope a la pantalla la ventana siempre cabe, y entonces
-        # siempre se puede alinear con el borde superior.
-        if not self.animation or not self.animation.original_frames:
-            return
-
-        # Tamaño del frame SIN escalar (base_size ya aplicado)
-        frame = self.animation.original_frames[0]
-        if frame.width <= 0 or frame.height <= 0:
-            return
-
-        screen = QGuiApplication.primaryScreen()
-        if screen is None:
-            return
-
-        area = screen.availableGeometry()
-        fit = min(area.width() / frame.width, area.height() / frame.height)
-
-        self.scaling.max_scale = min(self.scaling.max_scale, fit)
-
-        # Si ya estabas más grande que el tope nuevo, bajas a él
-        if self.scaling.scale > self.scaling.max_scale:
-            self.scaling.scale = self.scaling.max_scale
-            self.change_state(self.current_state)
-
     def scale_up(self):
         # No hace falta recrear la animación: el siguiente frame pide los
         # frames a la escala nueva y los cachea.
@@ -250,7 +214,6 @@ class DesktopPet(QWidget):
         # Estado inicial
         default_state = self.character.config["default_state"]
         self.change_state(default_state)
-        self.limit_scale_to_screen()
 
         # Reiniciar behavior
         self.behavior = BehaviorScheduler(

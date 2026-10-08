@@ -104,6 +104,32 @@ anon    330x400     fang   492x429     liz    311x858
 olivia  495x456     rosa   518x498     stella 409x498
 ```
 
+### Cambiar de tamaño va rápido porque reescala Qt, no Pillow
+
+Pillow solo decodifica el GIF y le recorta el margen, una sola vez. Todo el
+reescalado pasa por `QPixmap.scaled()`, que es unas **25 veces más rápido** que
+`Image.LANCZOS`:
+
+```
+escala   tamaño     Pillow LANCZOS   Qt smooth    ganancia
+  0.50   246x214           63.9ms        2.5ms       25.9x
+  1.30   639x557          132.1ms        4.6ms       28.7x
+  1.80   885x772          212.2ms        9.2ms       23.2x
+```
+
+Como el trabajo ocurre en el hilo de la interfaz, esa diferencia era justo lo que
+hacía que la rueda pareciera congelarse. Medido en la app: el peor paso de escala pasó
+de 185ms a 59ms en fang y de 140ms a 25ms en liz.
+
+### Sin tope de tamaño
+
+Antes había un `limit_scale_to_screen()` que impedía que la pet creciera más que la
+altura de la pantalla. Se basaba en una teoría equivocada (que el compositor limitaba
+la ventana), se ha eliminado, y con él el efecto colateral de que liz se quedaba
+atascada en 1.21 aunque su `config.json` permite 2.0. Ahora el tope es solo el
+`scale_limits` de cada personaje, así que una pet muy grande puede sobresalir de la
+pantura; bájale el tamaño con la rueda si te molesta.
+
 ### Por qué Qt
 
 En Tk sobre X11, `wm attributes` solo admite `-alpha`, `-topmost`, `-zoomed`,
