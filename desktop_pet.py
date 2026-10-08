@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 )
 
 from core.engine import create_app, configure_platform, claim_single_instance
+from core.interaction import ClickDragResolver, Gesture
 from core.scaling import ScalingManager
 from core.character_loader import Character
 from core.animation import AnimationPlayer
@@ -50,12 +51,15 @@ class DesktopPet(QWidget):
         self.scaling = ScalingManager(scale_min, scale_max)
 
         self.drag_offset = None
-        self._double_clicked = False
         self._press_pos = None
         self._drag_offset = None
-        self._press_window_pos = None
-        self._moved = False
         self._compositor_move = False
+
+        # Toda la decision de gestos vive en core/interaction.py, sin Qt
+        self._interaction = ClickDragResolver(
+            drag_threshold=QApplication.startDragDistance(),
+            double_click_ms=self.DOUBLE_CLICK_MS,
+        )
 
         # El click simple se retrasa para no comerse el doble click
         self._click_timer = QTimer(self)
@@ -168,15 +172,18 @@ class DesktopPet(QWidget):
         return lista or list(states.keys())
 
     def cycle_state(self):
-        if not self.cycle_list:
-            return
-
         # 🔥 Pausar behavior mientras usuario interactúa
         if hasattr(self, "behavior") and self.behavior:
             self.behavior.stop()
 
-        self.cycle_index = (self.cycle_index + 1) % len(self.cycle_list)
-        next_state = self.cycle_list[self.cycle_index]
+        if len(self.cycle_list) > 1:
+            self.cycle_index = (self.cycle_index + 1) % len(self.cycle_list)
+            next_state = self.cycle_list[self.cycle_index]
+        else:
+            # Personajes con un solo estado (liz, anon, rosa): no hay a donde
+            # ir, pero el click tiene que notarse de alguna manera, asi que se
+            # repite la animacion actual.
+            next_state = self.current_state
 
         self.change_state(next_state)
 
@@ -357,23 +364,27 @@ class DesktopPet(QWidget):
 
     # ---------------------------------
     # Eventos de ratón
+    #
+    # Aqui no hay decisiones, solo traduccion: los eventos se pasan a
+    # ClickDragResolver, que dice si es click, doble click o arrastre, y se
+    # ejecuta lo que corresponda. Los umbrales viven en core/interaction.py y
+    # se prueban sin GUI (tests/test_interaction.py).
+    # ---------------------------------
+    # ---------------------------------
+    # Los eventos se pasan como tuplas (x, y): core/interaction.py no depende
+    # de Qt y asi se puede probar sin montar la GUI.
     # ---------------------------------
     @staticmethod
-    def drag_threshold():
-        # Umbral de arrastre: el nativo de la plataforma (Qt usa ~10px) con
-        # margen. Con 4px cualquier temblor de la mano al hacer click contaba
-        # como arrastre y el click se perdia; en un click real el raton siempre
-        # se mueve algo.
-        return max(12, QApplication.startDragDistance())
+    def _xy(point):
+        return (point.x(), point.y())
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
             self._press_pos = event.globalPosition().toPoint()
             self._drag_offset = self._press_pos - self.frameGeometry().topLeft()
-            self._press_window_pos = self.pos()
-            self._moved = False
             self._compositor_move = False
-            self._double_clicked = False
+
+            self._interaction.press(self._xy(self._press_pos), self._xy(self.pos()))
 
             # Qt documenta llamar a startSystemMove() DESDE el press, no desde
             # el move: es cuando el puntero esta realmente agarrado. Si se
@@ -414,68 +425,94 @@ class DesktopPet(QWidget):
     def mouseMoveEvent(self, event):
         # Con arrastre gestionado por el compositor el puntero ya no es
         # nuestro: no hay que hacer nada aquí.
-        if getattr(self, "_compositor_move", False):
+        if self._compositor_move:
             return
 
         if (event.buttons() & Qt.LeftButton) and self._press_pos is not None:
-            if not self._moved:
-                # Distancia real, no manhattan: en diagonal esta duplica el
-                # valor y un temblor normal acababa contando como arrastre
-                delta = event.globalPosition().toPoint() - self._press_pos
-                distancia = (delta.x() ** 2 + delta.y() ** 2) ** 0.5
-
-                if distancia > self.drag_threshold():
-                    self._moved = True
+            gesto = self._interaction.move(self._xy(event.globalPosition().toPoint()))
 
             # Arrastre manual: solo funciona donde move() significa algo
             # (X11/Windows). En Wayland es un no-op.
-            if self._moved and self._drag_offset is not None:
+            if gesto == Gesture.DRAG and self._drag_offset is not None:
                 self.move(event.globalPosition().toPoint() - self._drag_offset)
 
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.LeftButton:
-            # "Se ha movido" se deduce comparando la posición de la ventana,
-            # porque con arrastre del compositor no nos llegan los moves.
-            # La comparación lleva tolerancia: si no, el temblor de la mano
-            # al hacer click desplazaba 1-2px la ventana y el click se perdia.
-            moved = getattr(self, "_moved", False)
-            press_pos = getattr(self, "_press_window_pos", None)
-
-            if press_pos is not None:
-                delta = self.pos() - press_pos
-                umbral = self.drag_threshold()
-
-                if (delta.x() ** 2 + delta.y() ** 2) ** 0.5 > umbral:
-                    moved = True
-
-            # Qt entrega el doble click como press/release/dblclick/release:
-            # el segundo release volvería a encolar un cambio de estado que
-            # pisaría el boop del doble click medio segundo después.
-            double_clicked = getattr(self, "_double_clicked", False)
+            gesto = self._interaction.release(self._xy(self.pos()))
 
             self._press_pos = None
             self._drag_offset = None
-            self._press_window_pos = None
-            self._moved = False
             self._compositor_move = False
-            self._double_clicked = False
 
-            # Un click simple cambia de estado. Se retrasa un poco porque Qt
-            # avisa del doble click después del primer release, y sin esta
-            # espera el boop se comía dos cambios de estado.
-            if not moved and not double_clicked:
-                self._click_timer.start(self.DOUBLE_CLICK_MS)
+            if gesto == Gesture.CLICK:
+                # Se retrasa porque Qt avisa del doble click despues del
+                # primer release; si no, el click simple y el doble se pisarian.
+                self._click_timer.start(self._interaction.double_click_ms)
 
         super().mouseReleaseEvent(event)
 
     def mouseDoubleClickEvent(self, event):
         if event.button() == Qt.LeftButton:
-            self._click_timer.stop()
-            self._double_clicked = True
-            self.change_state("boop")
+            if self._interaction.double_click() == Gesture.DOUBLE_CLICK:
+                self._click_timer.stop()
+                self.trigger_reaction()
         super().mouseDoubleClickEvent(event)
+
+    # ---------------------------------
+    # Reacciones: click y doble click
+    # ---------------------------------
+    def trigger_reaction(self):
+        """Doble click: la reaccion del personaje (boop o similar).
+
+        Antes se llamaba change_state("boop") a pelo y solo fang tiene un
+        estado llamado "boop": en los otros cinco personajes el doble click no
+        hacia absolutamente nada. Ahora se busca el estado de un solo uso que
+        tenga el personaje y, si no hay ninguno, se repite el actual con un
+        pequeño salto de tamaño para que se note.
+        """
+        if self.has_reaction_state():
+            self.change_state(self.pick_reaction_state())
+        else:
+            self.play_pop()
+
+    def has_reaction_state(self):
+        states = self.character.config["states"]
+
+        if "boop" in states:
+            return True
+
+        return any(not datos.get("loop", True) for datos in states.values())
+
+    def pick_reaction_state(self):
+        states = self.character.config["states"]
+
+        if "boop" in states:
+            return "boop"
+
+        for nombre, datos in states.items():
+            if not datos.get("loop", True):
+                return nombre
+
+        return self.current_state
+
+    # ---------------------------------
+    def play_pop(self):
+        """Salto rapido de tamaño: da una reaccion visible en personajes que
+        solo tienen una animacion en bucle, donde repetirla es indistinguible
+        de seguir viéndola."""
+        original = self.scaling.scale
+        objetivo = min(original * 1.12, self.scaling.max_scale)
+
+        if objetivo <= original:
+            return
+
+        self.scaling.scale = objetivo
+        QTimer.singleShot(160, lambda: self._restore_scale(original))
+
+    def _restore_scale(self, original):
+        self.scaling.scale = original
 
     def wheelEvent(self, event):
         delta = event.angleDelta().y()

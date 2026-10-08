@@ -194,22 +194,40 @@ de la zona donde tienes la pet.
   un boop de 0,2 s que luego volvía solo a `neutral` y desde fuera parecía que no
   pasaba nada. Se pueden volver a incluir con `"cycle_one_shots": true` en el
   `config.json` del personaje.
-- **Doble click**: siempre `boop`, y se queda ahí hasta el siguiente click.
+- **Doble click**: la reacción del personaje. Se busca un estado de un solo uso (tipo
+  `boop`) que el personaje tenga; si no tiene ninguno, la pet da un pequeño salto de
+  tamaño para que se note. Antes se llamaba `change_state("boop")` a pelo y solo fang
+  tiene un estado con ese nombre: **en los otros cinco personajes el doble click no
+  hacía absolutamente nada**.
 
-El umbral para distinguir click de arrastre es `max(12px, QApplication.startDragDistance())`,
-la distancia real del puntero (no manhattan, que en diagonal duplica el valor). Con
-4 px, el temblor normal de la mano al hacer click contaba como arrastre y el click se
-perdía:
+  ```
+  anon 1 estado -> salto      fang  16 estados -> boop
+  liz  1 estado -> salto      olivia 4 estados -> salto
+  rosa 1 estado -> salto      stella 2 estados -> salto
+  ```
+
+El umbral para distinguir click de arrastre vive en `core/interaction.py`, sin Qt y sin
+ventanas: solo recibe posiciones y devuelve `CLICK`, `DOUBLE_CLICK`, `DRAG` o `NONE`. El
+widget se limita a traducir los eventos del raton y ejecutar lo que devuelva. Se prueba
+asi:
+
+```bash
+python tests/test_interaction.py     # 17 pruebas, sin GUI
+```
+
+El umbral es `max(12px, QApplication.startDragDistance())` y la distancia es real, no
+manhattan (en diagonal esta duplica el valor). Con 4 px, el temblor normal de la mano
+al hacer click contaba como arrastre y el click se perdia:
 
 ```
 temblor    0px   2px   4px   6px      40px
 resultado  click click click click   arrastre
 ```
 
-Antes, con Wayland nativo, esto no pasaba: el arrastre lo llevaba el compositor y
-nuestro código no llegaba a marcar el movimiento. Al cambiar a XWayland para que el
-always on top funcionara, el arrastre pasó a ser manual y el umbral de 4 px empezó a
-comer clicks. Por eso el click funcionaba con Tk y dejo de funcionar aquí.
+El bloqueo del doble click es **temporal**, no un flag permanente: si el release final
+del doble click no llega (un compositor puede comerse un evento), con un flag se
+quedaban muertos todos los clicks posteriores. Sacar esa decision a
+`core/interaction.py` fue justo para poder probarla sin adivinar.
 
 ---
 
