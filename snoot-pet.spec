@@ -71,40 +71,39 @@ a = Analysis(
 
 pyz = PYZ(a.pure)
 
-exe = EXE(
-    pyz,
-    a.scripts,
-    [],
-    exclude_binaries=True,
-    name='snoot-pet',
-    debug=False,
-    bootloader_ignore_signals=False,
-    strip=False,
-    upx=False,
-    console=False,
-    disable_windowed_traceback=False,
-    argv_emulation=False,
-    target_arch=None,
-    codesign_identity=None,
-    entitlements_file=None,
-)
-
-coll = COLLECT(
-    exe,
-    a.binaries,
-    a.datas,
-    strip=False,
-    upx=False,
-    upx_exclude=[],
-    name='snoot-pet',
-)
-
-# En macOS, LSUIElement para que la pet no aparezca en el Dock ni en el
-# menu de apps mientras corre: es lo mismo que hace Qt.Tool en el resto de
-# plataformas, y aqui no hay forma de pedirlo desde el codigo.
 if sys.platform == 'darwin':
+    # En macOS todo va DENTRO del bundle, asi que el ejecutable se lleva las
+    # binaries y las datas en vez de usar exclude_binaries + COLLECT. Si se
+    # hiciera como en el resto, PyInstaller crearia ademas la carpeta
+    # dist/snoot-pet/ con una copia entera de Qt que no se usa.
+    #
+    # El bundle se crea en DISTPATH, NO dentro de la carpeta de COLLECT
+    # (building/osx.py:69 hace os.path.join(CONF['distpath'], basename)), asi
+    # que queda en dist/Snoot pet.app.
+    exe = EXE(
+        pyz,
+        a.scripts,
+        a.binaries,
+        a.datas,
+        [],
+        name='snoot-pet',
+        debug=False,
+        bootloader_ignore_signals=False,
+        strip=False,
+        upx=False,
+        console=False,
+        disable_windowed_traceback=False,
+        argv_emulation=False,
+        target_arch=None,
+        codesign_identity=None,
+        entitlements_file=None,
+    )
+
+    # LSUIElement para que la pet no aparezca en el Dock ni en el menu de apps
+    # mientras corre: es lo mismo que hace Qt.Tool en el resto de plataformas,
+    # y aqui no hay forma de pedirlo desde el codigo.
     app = BUNDLE(
-        coll,
+        exe,
         name='Snoot pet.app',
         icon=icono('icns'),
         bundle_identifier='com.snoot.pet',
@@ -114,4 +113,34 @@ if sys.platform == 'darwin':
             'LSUIElement': True,
             'NSHighResolutionCapable': True,
         },
+    )
+
+else:
+    # Windows y Linux: one-dir, con la carpeta _internal al lado del exe.
+    exe = EXE(
+        pyz,
+        a.scripts,
+        [],
+        exclude_binaries=True,
+        name='snoot-pet',
+        debug=False,
+        bootloader_ignore_signals=False,
+        strip=False,
+        upx=False,
+        console=False,
+        disable_windowed_traceback=False,
+        argv_emulation=False,
+        target_arch=None,
+        codesign_identity=None,
+        entitlements_file=None,
+    )
+
+    coll = COLLECT(
+        exe,
+        a.binaries,
+        a.datas,
+        strip=False,
+        upx=False,
+        upx_exclude=[],
+        name='snoot-pet',
     )

@@ -345,41 +345,53 @@ jobs:
       # en macOS van dentro de PySide6/Qt/lib y no hay forma de comprobar en un
       # runner de Linux que quitarlas no rompe nada.
       #
+      # El bundle lo pone PyInstaller en DISTPATH (building/osx.py hace
+      # os.path.join(distpath, basename)), NO dentro de una carpeta de COLLECT.
+      # Se localiza en vez de escribirla a mano, que es como se rompio esto la
+      # primera vez.
+      - name: localizar el .app
+        run: |
+          set -e
+          APP="$(find dist -maxdepth 1 -name '*.app' -type d | head -1)"
+          if [ -z "$APP" ]; then
+            echo "!! PyInstaller no ha generado ninguna .app en dist/"
+            echo "  lo que hay en dist:"
+            ls -la dist || true
+            exit 1
+          fi
+          echo "APP=$APP" >> "$GITHUB_ENV"
+          echo "encontrada: $APP"
+          test -f "$APP/Contents/MacOS/snoot-pet"
+          test -d "$APP/Contents/Resources/art_assets"
+          # LSUIElement es lo que hace que no salga en el Dock
+          grep -q LSUIElement "$APP/Contents/Info.plist" && echo "LSUIElement presente"
+          /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$APP/Contents/Info.plist"
+
       # Sin firmar, macOS lo trata como una app de unidentified developer.
       # Con firma ad-hoc al menos no aparece el aviso de "no se puede abrir
       # porque viene de un desarrollador desconocido" en muchas maquinas.
       - name: firma ad-hoc
         run: |
           set -e
-          codesign --force --deep --sign - "dist/snoot-pet/Snoot pet.app" 2>&1 || \
+          codesign --force --deep --sign - "$APP" 2>&1 || \
             echo "aviso: la firma ad-hoc fallo, se sigue sin firmar"
-          xattr -cr "dist/snoot-pet/Snoot pet.app" 2>/dev/null || true
+          xattr -cr "$APP" 2>/dev/null || true
 
       - name: zip y dmg
         run: |
           set -e
           V="${{ steps.ver.outputs.value }}"
-          APP="dist/snoot-pet/Snoot pet.app"
+          ARCH="${{ matrix.arch }}"
 
-          ditto -c -k --sequesterRsrc --keepParent "$APP" \
-                "SnootPet-$V-${{ matrix.arch }}.zip"
+          ditto -c -k --sequesterRsrc --keepParent "$APP" "SnootPet-$V-$ARCH.zip"
 
-          mkdir -p dmg
+          rm -rf dmg && mkdir -p dmg
           cp -a "$APP" dmg/
           ln -s /Applications dmg/Applications
           hdiutil create -volname "Snoot pet" -srcfolder dmg \
-            -ov -format UDZO "SnootPet-$V-${{ matrix.arch }}.dmg"
+            -ov -format UDZO "SnootPet-$V-$ARCH.dmg"
 
-      - name: comprobar el .app
-        run: |
-          set -e
-          APP="dist/snoot-pet/Snoot pet.app"
-          test -f "$APP/Contents/MacOS/snoot-pet"
-          test -d "$APP/Contents/Resources/art_assets"
-          # LSUIElement es lo que hace que no salga en el Dock
-          grep -q LSUIElement "$APP/Contents/Info.plist" && echo "LSUIElement presente"
-          /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" \
-            "$APP/Contents/Info.plist"
+          ls -la SnootPet-$V-$ARCH.zip SnootPet-$V-$ARCH.dmg
 
       - uses: actions/upload-artifact@v4
         with:
