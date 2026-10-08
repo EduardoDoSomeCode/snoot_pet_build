@@ -121,6 +121,23 @@ Como el trabajo ocurre en el hilo de la interfaz, esa diferencia era justo lo qu
 hacía que la rueda pareciera congelarse. Medido en la app: el peor paso de escala pasó
 de 185ms a 59ms en fang y de 140ms a 25ms en liz.
 
+### Cache de frames, y por qué está acotado
+
+Hay dos niveles: los frames ya recortados (`base_pixmaps`, se decodifican una vez) y
+los pixmaps de cada escala (`scaled_cache`). Volver a una escala ya visitada cuesta
+0.01ms en vez de 15–35ms, así que ir arriba y abajo con la rueda va fluido.
+
+El cache **no puede crecer sin límite**: cada escala guarda los 16 frames ya
+reescalados, y recorrer todo el rango con la rueda acumulaba más de 400 MB de pixmaps
+(RSS de 537 MB). Ahora se queda con las últimas escalas usadas, hasta 3 o 80 MB:
+
+```
+antes:  9 escalas en cache -> 460 MB de pixmaps, RSS 537 MB
+ahora:  1-3 escalas       ->  57 MB de pixmaps, RSS 237 MB
+```
+
+Volver a una escala antigua que se ha evicted cuesta ~30ms de reescalado, imperceptible.
+
 ### Sin tope de tamaño
 
 Antes había un `limit_scale_to_screen()` que impedía que la pet creciera más que la

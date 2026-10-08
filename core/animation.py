@@ -140,7 +140,10 @@ class AnimationPlayer:
         scale = round(self.scaling_manager.scale, 2)
 
         if scale in self.scaled_cache:
-            return self.scaled_cache[scale]
+            # Marcarlo como usado para que el LRU no lo expulse
+            frames = self.scaled_cache.pop(scale)
+            self.scaled_cache[scale] = frames
+            return frames
 
         factor = self._factor()
 
@@ -163,8 +166,42 @@ class AnimationPlayer:
             )
 
         self.scaled_cache[scale] = scaled
+        self._evict_cache(scale)
 
         return scaled
+
+    # ---------------------------------
+    # ---------------------------------
+    # El cache no puede crecer sin limite: cada escala guarda los frames ya
+    # reescalados, y con la rueda recorriendo todo el rango se acumulaba mas de
+    # 400 MB de pixmaps (16 frames de 1239x1080 a 4 bytes por pixel). Se queda
+    # con las ultimas escalas usadas, que es justo lo que hace falta para ir
+    # arriba y abajo con la rueda sin volver a reescalar.
+    # ---------------------------------
+    CACHE_MAX_ENTRIES = 3
+    CACHE_MAX_MB = 80
+
+    @staticmethod
+    def _frames_mb(frames):
+        return sum(p.width() * p.height() * 4 for p in frames) / (1024 * 1024)
+
+    def _evict_cache(self, keep_scale):
+        cache = self.scaled_cache
+
+        # Las claves se ordenan por antiguedad de uso (la que se acaba de
+        # insertar es la ultima)
+        while len(cache) > 1:
+            total = sum(self._frames_mb(f) for f in cache.values())
+
+            if len(cache) <= self.CACHE_MAX_ENTRIES and total <= self.CACHE_MAX_MB:
+                break
+
+            # Evitar siempre la escala en uso
+            oldest = next((k for k in cache if k != keep_scale), None)
+            if oldest is None:
+                break
+
+            cache.pop(oldest, None)
 
     # ---------------------------------
     def start(self):
