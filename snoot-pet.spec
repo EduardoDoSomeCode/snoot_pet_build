@@ -71,39 +71,57 @@ a = Analysis(
 
 pyz = PYZ(a.pure)
 
-if sys.platform == 'darwin':
-    # En macOS todo va DENTRO del bundle, asi que el ejecutable se lleva las
-    # binaries y las datas en vez de usar exclude_binaries + COLLECT. Si se
-    # hiciera como en el resto, PyInstaller crearia ademas la carpeta
-    # dist/snoot-pet/ con una copia entera de Qt que no se usa.
-    #
-    # El bundle se crea en DISTPATH, NO dentro de la carpeta de COLLECT
-    # (building/osx.py:69 hace os.path.join(CONF['distpath'], basename)), asi
-    # que queda en dist/Snoot pet.app.
-    exe = EXE(
-        pyz,
-        a.scripts,
-        a.binaries,
-        a.datas,
-        [],
-        name='snoot-pet',
-        debug=False,
-        bootloader_ignore_signals=False,
-        strip=False,
-        upx=False,
-        console=False,
-        disable_windowed_traceback=False,
-        argv_emulation=False,
-        target_arch=None,
-        codesign_identity=None,
-        entitlements_file=None,
-    )
+# One-dir en las tres plataformas: el ejecutable SIN las binaries dentro
+# (exclude_binaries=True) y un COLLECT que las recoge aparte.
+#
+# Esto es lo que genera PyInstaller por su cuenta en un build one-dir, y en
+# macOS es la unica forma de que el .app tenga los datos como ficheros de
+# verdad. Con exclude_binaries=False las DATA acaban dentro del archivo
+# empotrado del ejecutable (building/api.py:329-338), y entonces el .app no
+# tiene ningun directorio art_assets: la app funciona igual, porque el
+# bootloader lo descomprime en un temporal, pero deja de ser un bundle normal
+# y no se puede comprobar nada desde fuera.
+#
+# La plantilla onedirtmplt de PyInstaller genera justo esto, y bundletmplt
+# envuelve el COLLECT (no el EXE, que es el caso de onefile).
+exe = EXE(
+    pyz,
+    a.scripts,
+    [],
+    exclude_binaries=True,
+    name='snoot-pet',
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=False,
+    console=False,
+    disable_windowed_traceback=False,
+    argv_emulation=False,
+    target_arch=None,
+    codesign_identity=None,
+    entitlements_file=None,
+)
 
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.datas,
+    strip=False,
+    upx=False,
+    upx_exclude=[],
+    name='snoot-pet',
+)
+
+if sys.platform == 'darwin':
+    # El .app se crea en DISTPATH, NO dentro de la carpeta de COLLECT:
+    # building/osx.py:69 hace os.path.join(CONF['distpath'], basename). O sea
+    # que queda en dist/Snoot pet.app, y dist/snoot-pet/ es otra cosa.
+    #
     # LSUIElement para que la pet no aparezca en el Dock ni en el menu de apps
     # mientras corre: es lo mismo que hace Qt.Tool en el resto de plataformas,
     # y aqui no hay forma de pedirlo desde el codigo.
     app = BUNDLE(
-        exe,
+        coll,
         name='Snoot pet.app',
         icon=icono('icns'),
         bundle_identifier='com.snoot.pet',
@@ -113,34 +131,4 @@ if sys.platform == 'darwin':
             'LSUIElement': True,
             'NSHighResolutionCapable': True,
         },
-    )
-
-else:
-    # Windows y Linux: one-dir, con la carpeta _internal al lado del exe.
-    exe = EXE(
-        pyz,
-        a.scripts,
-        [],
-        exclude_binaries=True,
-        name='snoot-pet',
-        debug=False,
-        bootloader_ignore_signals=False,
-        strip=False,
-        upx=False,
-        console=False,
-        disable_windowed_traceback=False,
-        argv_emulation=False,
-        target_arch=None,
-        codesign_identity=None,
-        entitlements_file=None,
-    )
-
-    coll = COLLECT(
-        exe,
-        a.binaries,
-        a.datas,
-        strip=False,
-        upx=False,
-        upx_exclude=[],
-        name='snoot-pet',
     )
