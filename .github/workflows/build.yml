@@ -284,9 +284,21 @@ jobs:
   # ---------------------------------------------------------------------
   # macOS: .app en zip y .dmg.
   #
-  # macos-13 es Intel y macos-14 es arm64, cada uno con sus ruedas de
+  # macos-15-intel es x86_64 y macos-15 es arm64, cada uno con sus ruedas de
   # PySide6. El .app lleva LSUIElement en el Info.plist para que la pet no
   # aparezca en el Dock (lo pone la spec).
+  #
+  # OJO con las etiquetas, que han cambiado dos veces:
+  #
+  #   macos-13  se retiro el 4 de diciembre de 2025. Con esa etiqueta el job
+  #             se queda colgado en "Waiting for a runner to pick up this job"
+  #             para siempre y SIN error claro: no es un fallo del codigo, es
+  #             que no hay runner con ese nombre.
+  #   macos-14  se retira el 2 de noviembre de 2026, asi que tampoco sirve.
+  #
+  # macos-15-intel es ademas la ultima imagen x86_64 que ofrece GitHub: Apple
+  # dejo de soportar Intel, asi que esta variante funcionara hasta 2027 y luego
+  # habra que quitar el build de 64 bits de macOS.
   # ---------------------------------------------------------------------
   macos:
     name: macos (${{ matrix.arch }})
@@ -295,9 +307,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - runner: macos-13
+          - runner: macos-15-intel
             arch: x86_64
-          - runner: macos-14
+          - runner: macos-15
             arch: arm64
     runs-on: ${{ matrix.runner }}
     steps:

@@ -1,0 +1,17 @@
+# Configuracion de actionlint (el linter que se pasa antes de subir).
+#
+# Existe por una sola cosa: actionlint 1.7.7 no conoce la etiqueta de runner
+# macos-15-intel y da un error falso que hace pensar que la etiqueta no existe.
+# La etiqueta SI existe, la creo GitHub en septiembre de 2025 al retirar
+# macos-13. Su base de datos de etiquetas va por detras de GitHub.
+#
+# El patron es especifico de ESA etiqueta a proposito: si algum dia se pone una
+# etiqueta que de verdad no existe, el error sale y se ve. Ignorar "label ... is
+# unknown" entero habria tapado justo el fallo que hizo que este job se quedara
+# colgado.
+paths:
+  .github/workflows/build.yml:
+    ignore:
+      - 'label "macos-15-intel" is unknown'
+
+# Referencia: https://github.com/rhysd/actionlint/blob/main/docs/config.md
