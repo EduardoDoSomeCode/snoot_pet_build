@@ -63,12 +63,11 @@ jobs:
           fi
           echo "ninguna prueba importa Qt"
 
-      # No abre ninguna ventana, pero si algo se rompe al importar, se ve
-      # antes de perder tiempo en los tres jobs de empaquetado.
-      - name: importa el modulo
-        run: |
-          export QT_QPA_PLATFORM=offscreen
-          python -c "import sys; sys.path.insert(0,'.'); import desktop_pet; print('importa bien')"
+      # Aqui NO se importa desktop_pet: el job no instala PySide6 a proposito
+      # (ver arriba), asi que un "import desktop_pet" aqui falla siempre. Si
+      # se quiere comprobar que el modulo entra, tiene que ser en un job que
+      # tenga Qt, y para eso estan linux/windows/macos, que compilan la app
+      # entera.
 
   # ---------------------------------------------------------------------
   # Linux: un solo build de PyInstaller, dos empaquetados.
