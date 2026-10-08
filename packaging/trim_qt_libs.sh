@@ -28,12 +28,19 @@ set -euo pipefail
 APPDIR="${1:?falta el AppDir}"
 
 LIBDIR="$APPDIR/_internal/PySide6/Qt/lib"
+INTERNAL="$APPDIR/_internal"
 PLATDIR="$APPDIR/_internal/PySide6/Qt/plugins/platforms"
 
 if [ ! -d "$LIBDIR" ]; then
     echo "!! no existe $LIBDIR: nada que quitar"
     exit 1
 fi
+
+# PyInstaller deja en _internal/ un symlink a cada libreria de Qt, para que se
+# resuelvan al arrancar. Al borrar la libreria de verdad, ese symlink se queda
+# apuntando a la nada. No rompe nada (nadie las necesita), pero un dangling
+# symlink dentro del AppImage queda mal y confunde a ldd, asi que tambien se
+# quitan. Solo los que de verdad estan rotos: si el symlink resuelve, se deja.
 
 # Lo que se puede borrar. Lista explicita a proposito: si mañana aparece otra
 # libreria muerta, se añade aqui y se comprueba, en vez de borrar "lo que no
@@ -92,6 +99,17 @@ for nombre in "${BORRAR_PLAT[@]}"; do
         quitados=$((quitados + 1))
     fi
 done
+
+rotos=0
+for enlace in "$INTERNAL"/libQt6*.so.6; do
+    # -e es falso justo cuando el symlink no resuelve
+    if [ -L "$enlace" ] && [ ! -e "$enlace" ]; then
+        rm -f "$enlace"
+        rotos=$((rotos + 1))
+    fi
+done
+
+[ "$rotos" -gt 0 ] && echo "  ($rotos symlinks rotos en _internal/ tambien quitados)"
 
 despues=$(du -sb "$LIBDIR" "$PLATDIR" 2>/dev/null | awk '{s+=$1} END {print s}')
 ahorro=$((antes - despues))

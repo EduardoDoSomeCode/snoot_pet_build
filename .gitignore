@@ -13,10 +13,21 @@ build/
 dist/
 *.spec.bak
 
-# AppImage generado (92 MB, se reconstruye con packaging/build_appimage.sh)
+# AppImage generado (79 MB, se reconstruye con packaging/build_appimage.sh)
 *.AppImage
 AppDir/
 squashfs-root/
 
 # Capturas de depuración que se han ido dejando en la raíz
 /*.png
+
+# Iconos que genera packaging/make_icons.py
+packaging/icons/
+
+# Artefactos que deja el build de GitHub Actions
+/appimagetool.AppImage
+/snoot-pet_*.deb
+/SnootPet-*.exe
+/SnootPet-*.zip
+/SnootPet-*.dmg
+/dmg/

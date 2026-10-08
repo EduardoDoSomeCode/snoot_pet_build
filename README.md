@@ -250,26 +250,59 @@ core/character_loader.py  config.json de cada personaje
 core/scaling.py           escala con límites
 core/settings.py          persistencia de los toggles
 core/paths.py             rutas de datos (portable / APPDATA / XDG)
-packaging/                AppRun, .desktop y script de build del AppImage
+packaging/                AppRun, .desktop, spec única y scripts de empaquetado
 ```
 
-## Empaquetar como AppImage
+## Empaquetar
+
+Hay una sola spec, `snoot-pet.spec`, y da el build one-dir para las cuatro
+plataformas. `packaging/` tiene un script por destino.
 
 ```bash
+# Linux: AppImage
 ./packaging/build_appimage.sh
+
+# Linux: .deb
+./packaging/build_deb.sh 1.0.0 dist
+
+# Windows y macOS: PyInstaller con la misma spec
+python -m PyInstaller snoot-pet.spec --noconfirm --clean
+#   Windows -> dist\snoot-pet\  + packaging/snoot-pet.iss (Inno Setup)
+#   macOS   -> dist\snoot-pet/Snoot pet.app
+
+# Iconos que necesitan los empaquetados (.png, .ico, .icns)
+python packaging/make_icons.py packaging/icons
 ```
 
-Genera `Snoot_pet-x86_64.AppImage` (~90 MB) en la raíz del proyecto. El script crea
-un venv en `/tmp/snoot-appimage`, lanza PyInstaller con `desktop_pet_appimage.spec`
-(one-dir), monta el `AppDir` y lo empaqueta con `appimagetool`.
+`build_appimage.sh` crea un venv en `/tmp/snoot-appimage` y sale todo solo. En
+CI se llama con `VENV= PYTHON=python` para reutilizar el intérprete de la action,
+y con `SKIP_BUILD=1` si el build de PyInstaller ya está hecho (el job de Linux
+compila una vez y empaqueta AppImage y .deb del mismo `dist`).
 
 Notas:
 
 - Se distribuye un `AppRun` propio porque algunas versiones de `appimagetool` no lo
   generan y el AppImage queda sin él (no arranca).
-- El AppImage lleva Qt completo: pesa más que la versión Tk (que eran 65 MB), pero
-  funciona igual en sistemas sin Qt instalado.
-- `desktop_pet.spec` sigue siendo el build one-file (útil para Windows).
+- `packaging/trim_qt_libs.sh` quita 21 MB de QML/Quick/Pdf que viajan en el
+  AppImage y no se cargan nunca, y se ejecuta dentro de `build_appimage.sh`. Solo
+  en Linux: en Windows y macOS las librerías son `.dll` y el recorte no está
+  verificado ahí. El AppImage queda en ~79 MB.
+- El `.deb` se apoya en que el bundle lleva Qt, libxcb, libxkbcommon y X11
+  dentro, así que solo depende de `libc6`. En una sesión Wayland hace falta
+  XWayland instalado, que es lo que permite el always on top.
+
+### Builds automáticos
+
+`.github/workflows/build.yml` compila en cada push y PR: Linux (AppImage +
+`.deb`), Windows (instalador Inno Setup + portable en zip) y macOS (`.app` en
+zip y `.dmg`, x86_64 y arm64). Las cuatro suites de pruebas se ejecutan antes, en
+un runner aparte, y si fallan no se compila nada.
+
+Las versiones salen de la etiqueta de git: un tag `v1.2.3` genera los
+artefactos con versión 1.2.3, y cualquier otro push usa 0.0.0.
+
+Lo que **no** cubre: AppImage de aarch64. PyInstaller no compila cruzado, así que
+hace falta un runner arm64 nativo.
 
 ## Desarrollo
 

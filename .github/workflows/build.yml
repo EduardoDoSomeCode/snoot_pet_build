@@ -1,0 +1,290 @@
+name: build
+
+# Se dispara con cada push y con cada PR (para comprobar que al menos
+# compila), y a mano desde la pestaña Actions.
+on:
+  push:
+    branches: [main, master]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  # ---------------------------------------------------------------------
+  # Las pruebas antes que nada: son las cuatro suites sin GUI, y tardan
+  # segundos. Si esto falla no tiene sentido seguir compilando.
+  # ---------------------------------------------------------------------
+  test:
+    name: tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      - run: pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: pruebas
+        run: |
+          set -e
+          export QT_QPA_PLATFORM=offscreen
+          for t in tests/test_*.py; do
+            echo "--- $t"
+            python "$t"
+          done
+
+  # ---------------------------------------------------------------------
+  # Linux: un solo build de PyInstaller, dos empaquetados.
+  #
+  # No hay AppImage de aarch64: PyInstaller no compila cruzado, haria
+  # falta un runner arm64 nativo. Se genera en un job aparte cuando haya
+  # uno disponible.
+  # ---------------------------------------------------------------------
+  linux:
+    name: linux (AppImage + deb)
+    needs: test
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      - name: version
+        id: ver
+        run: |
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            echo "value=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=0.0.0" >> "$GITHUB_OUTPUT"
+          fi
+
+      - run: pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: iconos
+        run: python packaging/make_icons.py packaging/icons
+
+      # Todo el build vive bajo build/ para que .gitignore lo cubra y para que
+      # los scripts de empaquetado vean exactamente el mismo dist.
+      - name: PyInstaller
+        run: |
+          python -m PyInstaller snoot-pet.spec \
+            --distpath build/dist --workpath build/work --noconfirm --clean
+
+      # Solo en Linux: en Windows y macOS las librerias son .dll y el recorte
+      # no se ha verificado ahi, asi que se dejan enteras. En Linux son 21 MB,
+      # y el script se niega a borrar nada de su lista protegida.
+      - name: quitar Qt que no se usa
+        run: bash packaging/trim_qt_libs.sh build/dist/snoot-pet
+
+      - name: AppImage
+        run: |
+          set -e
+          # El AppImage necesita FUSE para montarse y los runners no lo
+          # tienen. build_appimage.sh ya invoca appimagetool con
+          # APPIMAGE_EXTRACT_AND_RUN=1, asi que no hay que hacer nada aqui.
+          SKIP_BUILD=1 VENV= PYTHON=python BUILD_DIR="$PWD/build" \
+            bash packaging/build_appimage.sh
+
+      - name: deb
+        run: |
+          PYTHON=python BUILD_DIR="$PWD/build" \
+            bash packaging/build_deb.sh "${{ steps.ver.outputs.value }}" build/dist
+
+      - name: comprobar los dos paquetes
+        run: |
+          set -e
+          ls -la Snoot_pet-x86_64.AppImage
+          dpkg-deb --info build/snoot-pet_${{ steps.ver.outputs.value }}_amd64.deb
+          # que el AppImage se descomprima bien y traiga el payload
+          ./Snoot_pet-x86_64.AppImage --appimage-extract >/dev/null
+          test -x squashfs-root/AppRun
+          # el ejecutable va en la raiz del AppDir, no en _internal
+          test -x squashfs-root/snoot-pet
+          test -d squashfs-root/_internal/art_assets/characters
+          # Qt de QML/Quick/Pdf fuera, y sin symlinks rotos
+          test ! -f squashfs-root/_internal/PySide6/Qt/lib/libQt6Quick.so.6
+          test ! -e squashfs-root/_internal/libQt6Qml.so.6
+          # nada sin resolver
+          ldd squashfs-root/_internal/PySide6/Qt/plugins/platforms/libqxcb.so \
+            | grep -q "not found" && { echo "faltan librerias"; exit 1; }
+          echo "AppImage correcto y sin el Qt de QML"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Snoot_pet-linux-x86_64
+          path: |
+            Snoot_pet-x86_64.AppImage
+            build/snoot-pet_*.deb
+
+  # ---------------------------------------------------------------------
+  # Windows: instalador con Inno Setup y ademas el portable en zip.
+  # ---------------------------------------------------------------------
+  windows:
+    name: windows (instalador + portable)
+    needs: test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      - name: version
+        id: ver
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF_TYPE -eq 'tag') {
+            "value=$($env:GITHUB_REF_NAME -replace '^v','')" >> $env:GITHUB_OUTPUT
+          } else {
+            "value=0.0.0" >> $env:GITHUB_OUTPUT
+          }
+
+      - run: pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: iconos
+        run: python packaging/make_icons.py packaging/icons
+
+      - name: PyInstaller
+        run: |
+          python -m PyInstaller snoot-pet.spec --distpath dist --workpath build --noconfirm --clean
+
+      # El portable es el mismo build one-dir, en zip. Se lleva tambien el
+      # .exe suelto por si alguien lo prefiere sin comprimir.
+      - name: portable
+        shell: pwsh
+        run: |
+          Compress-Archive -Path dist\snoot-pet\* -DestinationPath "SnootPet-portable-${{ steps.ver.outputs.value }}-x64.zip"
+          Copy-Item dist\snoot-pet\snoot-pet.exe "SnootPet-${{ steps.ver.outputs.value }}-x64.exe"
+
+      - name: instalador (Inno Setup)
+        shell: pwsh
+        run: |
+          choco install innosetup --no-progress -y
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { throw "no encuentro ISCC.exe" }
+          & $iscc "/DAppVersion=${{ steps.ver.outputs.value }}" `
+                 "/DSourceDir=$PWD\dist\snoot-pet" `
+                 "/DIconFile=$PWD\packaging\icons\snoot-pet.ico" `
+                 "packaging\snoot-pet.iss"
+          if ($LASTEXITCODE -ne 0) { throw "ISCC fallo con $LASTEXITCODE" }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Snoot_pet-windows-x64
+          path: |
+            SnootPet-*.exe
+            SnootPet-*.zip
+
+  # ---------------------------------------------------------------------
+  # macOS: .app en zip y .dmg.
+  #
+  # macos-13 es Intel y macos-14 es arm64, cada uno con sus ruedas de
+  # PySide6. El .app lleva LSUIElement en el Info.plist para que la pet no
+  # aparezca en el Dock (lo pone la spec).
+  # ---------------------------------------------------------------------
+  macos:
+    name: macos (${{ matrix.arch }})
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-13
+            arch: x86_64
+          - runner: macos-14
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      - name: version
+        id: ver
+        run: |
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            echo "value=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=0.0.0" >> "$GITHUB_OUTPUT"
+          fi
+
+      - run: pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: iconos
+        run: python packaging/make_icons.py packaging/icons
+
+      - name: PyInstaller
+        run: |
+          python -m PyInstaller snoot-pet.spec --distpath dist --workpath build --noconfirm --clean
+
+      # Sin firmar, macOS lo trata como una app de unidentified developer.
+      # Con firma ad-hoc al menos no aparece el aviso de "no se puede abrir
+      # porque viene de un desarrollador desconocido" en muchas maquinas.
+      - name: firma ad-hoc
+        run: |
+          set -e
+          codesign --force --deep --sign - "dist/snoot-pet/Snoot pet.app" 2>&1 || \
+            echo "aviso: la firma ad-hoc fallo, se sigue sin firmar"
+          xattr -cr "dist/snoot-pet/Snoot pet.app" 2>/dev/null || true
+
+      - name: zip y dmg
+        run: |
+          set -e
+          V="${{ steps.ver.outputs.value }}"
+          APP="dist/snoot-pet/Snoot pet.app"
+
+          ditto -c -k --sequesterRsrc --keepParent "$APP" \
+                "SnootPet-$V-${{ matrix.arch }}.zip"
+
+          mkdir -p dmg
+          cp -a "$APP" dmg/
+          ln -s /Applications dmg/Applications
+          hdiutil create -volname "Snoot pet" -srcfolder dmg \
+            -ov -format UDZO "SnootPet-$V-${{ matrix.arch }}.dmg"
+
+      - name: comprobar el .app
+        run: |
+          set -e
+          APP="dist/snoot-pet/Snoot pet.app"
+          test -f "$APP/Contents/MacOS/snoot-pet"
+          test -d "$APP/Contents/Resources/art_assets"
+          # LSUIElement es lo que hace que no salga en el Dock
+          grep -q LSUIElement "$APP/Contents/Info.plist" && echo "LSUIElement presente"
+          /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" \
+            "$APP/Contents/Info.plist"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Snoot_pet-macos-${{ matrix.arch }}
+          path: |
+            SnootPet-*.zip
+            SnootPet-*.dmg

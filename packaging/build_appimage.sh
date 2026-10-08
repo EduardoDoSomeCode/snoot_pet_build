@@ -5,6 +5,11 @@
 #   ./packaging/build_appimage.sh
 #
 # Necesitas: python3 con venv, pyinstaller, pillow y appimagetool.
+#
+# En CI se llama con VENV="" para no crear un venv propio y reutilizar el de
+# la action:
+#
+#   VENV= PYTHON=python BUILD_DIR=$PWD/build ./packaging/build_appimage.sh
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -14,24 +19,40 @@ BUILD="${BUILD_DIR:-/tmp/snoot-appimage}"
 cd "$ROOT"
 
 PYTHON="${PYTHON:-python3}"
-VENV="${VENV:-$BUILD/venv}"
+VENV="${VENV-$BUILD/venv}"
 
 # --- 1. Entorno de build ---------------------------------------------------
-if [ ! -x "$VENV/bin/python" ]; then
-    echo "==> creando venv en $VENV"
-    "$PYTHON" -m venv "$VENV"
-    "$VENV/bin/python" -m ensurepip --upgrade >/dev/null 2>&1 || true
+if [ -z "${VENV:-}" ]; then
+    # Sin venv: se usa el interprete de la PATH tal cual (CI).
+    PY="$PYTHON"
+else
+    if [ ! -x "$VENV/bin/python" ]; then
+        echo "==> creando venv en $VENV"
+        "$PYTHON" -m venv "$VENV"
+        "$VENV/bin/python" -m ensurepip --upgrade >/dev/null 2>&1 || true
+    fi
+
+    PY="$VENV/bin/python"
 fi
 
-"$VENV/bin/python" -m pip install --quiet --upgrade pip
-"$VENV/bin/python" -m pip install --quiet -r requirements.txt -r requirements-dev.txt
+if [ "${SKIP_BUILD:-0}" != "1" ]; then
+    "$PY" -m pip install --quiet --upgrade pip
+    "$PY" -m pip install --quiet -r requirements.txt -r requirements-dev.txt
+fi
 
 # --- 2. PyInstaller (one-dir) --------------------------------------------
-echo "==> PyInstaller"
-"$VENV/bin/pyinstaller" desktop_pet_appimage.spec \
-    --distpath "$BUILD/dist" \
-    --workpath "$BUILD/build" \
-    --noconfirm --clean
+# Se usa la spec unica de todas las plataformas, no una solo para Linux.
+# Con SKIP_BUILD=1 se da por hecho que $BUILD/dist/snoot-pet ya existe: en CI
+# conviene compilar una vez y empaquetar AppImage y .deb del mismo dist.
+if [ "${SKIP_BUILD:-0}" = "1" ]; then
+    echo "==> SKIP_BUILD=1: se reutiliza $BUILD/dist/snoot-pet"
+else
+    echo "==> PyInstaller"
+    "$PY" -m PyInstaller snoot-pet.spec \
+        --distpath "$BUILD/dist" \
+        --workpath "$BUILD/build" \
+        --noconfirm --clean
+fi
 
 # --- 3. Montar el AppDir ---------------------------------------------------
 echo "==> AppDir"
@@ -50,14 +71,7 @@ cp "$HERE/snoot-pet.desktop" "$APPDIR/snoot-pet.desktop"
 echo "==> quitando librerias de Qt sin usar"
 bash "$HERE/trim_qt_libs.sh" "$APPDIR"
 
-"$VENV/bin/python" - "$ROOT/fangneutral.ico" "$APPDIR/snoot-pet.png" <<'PY'
-import sys
-from PIL import Image
-
-src, dst = sys.argv[1], sys.argv[2]
-Image.open(src).convert("RGBA").save(dst)
-print("icono:", dst)
-PY
+"$PY" "$HERE/make_icons.py" "$APPDIR" >/dev/null
 
 ln -sf snoot-pet.png "$APPDIR/.DirIcon"
 
