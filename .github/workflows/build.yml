@@ -146,10 +146,16 @@ jobs:
           # Qt de QML/Quick/Pdf fuera, y sin symlinks rotos
           test ! -f squashfs-root/_internal/PySide6/Qt/lib/libQt6Quick.so.6
           test ! -e squashfs-root/_internal/libQt6Qml.so.6
-          # nada sin resolver
-          ldd squashfs-root/_internal/PySide6/Qt/plugins/platforms/libqxcb.so \
-            | grep -q "not found" && { echo "faltan librerias"; exit 1; }
           echo "AppImage correcto y sin el Qt de QML"
+
+      # Que solo necesite librerias de base del sistema y el driver de GPU.
+      #
+      # OJO: esto NO es "ldd sin not found". ldd resuelve contra el sistema que
+      # este corriendo, asi que en un runner con Mesa todo aparece resuelto
+      # aunque el AppImage no traiga nada. De ahi que este check mire los
+      # NEEDED uno a uno contra lo que hay dentro del bundle.
+      - name: el AppImage no depende de nada raro
+        run: python packaging/check_libraries.py squashfs-root
 
       - uses: actions/upload-artifact@v4
         with:

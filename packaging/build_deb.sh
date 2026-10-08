@@ -58,7 +58,9 @@ Section: games
 Priority: optional
 Architecture: $ARQ
 Maintainer: Snoot pet <snoot@example.invalid>
-Depends: libc6 (>= 2.31)
+Depends: libc6 (>= 2.31), libglib2.0-0, libxkbcommon0, libxkbcommon-x11-0,
+ libxcb1, libx11-6, libegl1, libgl1, libfontconfig1, libdbus-1-3,
+ libwayland-client0, libwayland-cursor0
 Installed-Size: $(du -ks "$STAGE" | cut -f1)
 Homepage: https://github.com/snoot-pet/snoot-pet
 Description: Desktop pet that lives on your desktop
