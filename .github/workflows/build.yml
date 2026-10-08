@@ -102,6 +102,22 @@ jobs:
 
       - run: pip install -r requirements.txt -r requirements-dev.txt
 
+      # Un AppImage se construye con ldd mirando el sistema donde se compila: si ldd
+      # encuentra una libreria, PyInstaller la mete dentro; si no, la omite. En
+      # un runner minimo eso deja el paquete SIN las librerias de X11 que
+      # libQt6XcbQpa necesita (115 .so en vez de 120), y el resultado depende
+      # de la maquina que compila. Instalarlas ANTES de compilar hace que
+      # ldd las vea y queden dentro, igual que en un escritorio.
+      - name: librerias del protocolo de ventanas
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends \
+            libxcb1 libxcb-cursor0 libxcb-icccm4 libxcb-image0 \
+            libxcb-keysyms1 libxcb-render-util0 libxcb-randr0 libxcb-render0 \
+            libxcb-shape0 libxcb-sync1 libxcb-util1 libxcb-xfixes0 libxcb-xkb1 \
+            libxkbcommon0 libxkbcommon-x11-0 \
+            libwayland-client0 libwayland-cursor0
+
       - name: iconos
         run: python packaging/make_icons.py packaging/icons
 
@@ -148,6 +164,10 @@ jobs:
           test ! -e squashfs-root/_internal/libQt6Qml.so.6
           echo "AppImage correcto y sin el Qt de QML"
 
+      # Un AppImage se construye con ldd mirando el sistema donde se compila,
+      # asi que en un runner minimo salen con menos librerias que en un
+      # escritorio. Este paso las mete a proposito, antes de empaquetar, para
+      # que el resultado no dependa de la maquina que compila.
       # Que solo necesite librerias de base del sistema y el driver de GPU.
       #
       # OJO: esto NO es "ldd sin not found". ldd resuelve contra el sistema que

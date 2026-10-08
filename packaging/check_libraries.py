@@ -11,11 +11,19 @@ escritorio con Mesa todo aparece resuelto aunque el AppImage no traiga nada:
 libEGL.so.1 y libGL.so.1 salian bien aqui y en un runner de CI, que es un
 contenedor sin Mesa, son justo las que faltan.
 
+Ese fallo no es solo del check: el escaner de dependencias de PyInstaller
+(bindepend.py) tambien usa ldd para decidir que empaquetar. En una maquina
+donde las librerias estan instaladas se las lleva dentro; en un runner minimo
+no las encuentra y el paquete sale sin ellas. Por eso este script contrasta
+los NEEDED contra el CONTENIDO del bundle y nunca contra el sistema.
+
 Lo que se comprueba aqui es otra cosa: se enumera todo lo que el bundle pide
 con NEEDED y se mira si cada nombre esta dentro del propio AppImage. Lo que
 no esta, tiene que ser una libreria de base del sistema (libc, libm, el loader,
 libgcc), que es legitimo y esta en cualquier maquina con el mismo
-arquetipo, o entonces el AppImage depende de algo que no viaja con el.
+arquetipo, o el driver de pantalla, o el protocolo de ventanas (X11/Wayland),
+que lo instala el servidor grafico. Si no esta en ninguna de esas, el AppImage
+depende de algo que no viaja con el.
 
 Eseason los NEEDED de libQt6Core, Qt6Gui, Qt6Widgets, Qt6Network, Qt6XcbQpa,
 Qt6DBus y Qt6Svg, los unicos que quedan tras el recorte.
@@ -56,16 +64,25 @@ PERMITIDAS = {
     "libglapi.so",
     "libglx.so",
     "libGLdispatch.so",
-    # protocolo de ventanas: el servidor X (XWayland o X11) y el compositor
-    # los instalan si hay sesion de escritorio; no es algo que deba viajar
-    # dentro del AppImage. Si no hay servidor, la app no tiene donde dibujarse
-    # igualmente.
+    # Protocolo de ventanas: el servidor X (X11 o XWayland) y el compositor los
+    # instalan si hay sesion de escritorio. Todas estas vienen colgando de
+    # libxcb1, que a su vez necesita cualquiera que tenga un servidor X, asi
+    # que no es algo que deba viajar dentro del AppImage: si no hay servidor,
+    # la pet no tiene donde dibujarse igualmente.
+    #
+    # El prefijo cubre libxcb-*.so* entero (cursor, icccm, image, keysyms,
+    # render-util, shape, util, xkb...) mas libxcb.so a secas.
     "libX11-xcb.so",
     "libxcb.so",
     "libwayland-client.so",
     "libwayland-cursor.so",
     "libwayland-egl.so",
+    "libxkbcommon.so",
+    "libxkbcommon-x11.so",
 }
+
+# Prefijos que se permiten entero (por prefijo, no por nombre exacto).
+PERMITIDAS_PREFIJO = ("libxcb-",)
 
 # Raices del bundle donde puede estar cualquier .so
 def raices(appdir):
@@ -157,7 +174,7 @@ def main():
 
                 continue
 
-            if k in PERMITIDAS:
+            if k in PERMITIDAS or k.startswith(PERMITIDAS_PREFIJO):
                 continue
 
             faltan.setdefault(k, set()).add(os.path.basename(actual))
