@@ -186,48 +186,55 @@ Activa **Capture Mode** y en OBS añade una fuente de captura:
 Alternativa que funciona en cualquier caso: *Display Capture* + *Crop/Filter* alrededor
 de la zona donde tienes la pet.
 
-### Click y doble click
+### Click: uno solo, inmediato
 
-- **Click**: avanza por los estados que se reproducen en bucle (`neutral`, `guitar`,
-  `phone`…). Los de un solo uso (`boop`, `blushy_*`…) quedan fuera a propósito: en fang
-  son 7 de 16 y estaban al principio de la lista, así que los primeros clicks caían en
-  un boop de 0,2 s que luego volvía solo a `neutral` y desde fuera parecía que no
-  pasaba nada. Se pueden volver a incluir con `"cycle_one_shots": true` en el
-  `config.json` del personaje.
-- **Doble click**: la reacción del personaje. Se busca un estado de un solo uso (tipo
-  `boop`) que el personaje tenga; si no tiene ninguno, la pet da un pequeño salto de
-  tamaño para que se note. Antes se llamaba `change_state("boop")` a pelo y solo fang
-  tiene un estado con ese nombre: **en los otros cinco personajes el doble click no
-  hacía absolutamente nada**.
+**Un único gesto.** El click cambia de animación al instante, igual que en la versión de
+Tk. No hay doble click ni temporizadores: antes el click se retrasaba 250 ms para poder
+distinguírselo de un doble click, y cualquier evento que se perdiera dejaba el click
+sin hacer nada — un fallo indistinguible de "la pet no responde".
 
-  ```
-  anon 1 estado -> salto      fang  16 estados -> boop
-  liz  1 estado -> salto      olivia 4 estados -> salto
-  rosa 1 estado -> salto      stella 2 estados -> salto
-  ```
+El click avanza por los estados que se reproducen en bucle (`neutral`, `guitar`…). Los
+de un solo uso (`boop`, `blushy_*`…) quedan fuera a propósito: en fang son 7 de 16 y
+estaban al principio de la lista, así que los primeros clicks caían en un boop de 0,2 s
+que luego volvía solo a `neutral` y desde fuera parecía que no pasaba nada. Se pueden
+volver a incluir con `"cycle_one_shots": true` en el `config.json` del personaje.
 
-El umbral para distinguir click de arrastre vive en `core/interaction.py`, sin Qt y sin
-ventanas: solo recibe posiciones y devuelve `CLICK`, `DOUBLE_CLICK`, `DRAG` o `NONE`. El
-widget se limita a traducir los eventos del raton y ejecutar lo que devuelva. Se prueba
-asi:
+La decisión de gestos vive en `core/interaction.py`, sin Qt ni ventanas: recibe
+posiciones y devuelve `CLICK`, `DRAG` o `NONE`. Se prueba sin montar la GUI:
 
 ```bash
-python tests/test_interaction.py     # 17 pruebas, sin GUI
+python tests/test_interaction.py     # 16 pruebas
 ```
 
 El umbral es `max(12px, QApplication.startDragDistance())` y la distancia es real, no
 manhattan (en diagonal esta duplica el valor). Con 4 px, el temblor normal de la mano
-al hacer click contaba como arrastre y el click se perdia:
+al hacer click contaba como arrastre y el click se perdía:
 
 ```
 temblor    0px   2px   4px   6px      40px
 resultado  click click click click   arrastre
 ```
 
-El bloqueo del doble click es **temporal**, no un flag permanente: si el release final
-del doble click no llega (un compositor puede comerse un evento), con un flag se
-quedaban muertos todos los clicks posteriores. Sacar esa decision a
-`core/interaction.py` fue justo para poder probarla sin adivinar.
+### Depurar los gestos
+
+Con `SNOOT_LOG=1` se registra cada gesto del ratón con su distancia y la decisión
+tomada, en `~/.local/share/Snoot_pet/pet.log`:
+
+```bash
+SNOOT_LOG=1 ./Snoot_pet-x86_64.AppImage
+# ... haz un click ...
+cat ~/.local/share/Snoot_pet/pet.log
+```
+
+```
+00:19:45 press  pos=(816, 367) ventana=(616, 217) umbral=12
+00:19:45 move   pos=(820, 367) dist=(816, 367) -> none
+00:19:45 move   pos=(824, 367) dist=(816, 367) -> none
+00:19:45 release ventana=(616, 217) -> click
+```
+
+Si haces click, no ocurre nada y **no** aparece una línea `release ... -> click`, el
+problema ya no está en la app: los eventos no están llegando a la ventana.
 
 ---
 

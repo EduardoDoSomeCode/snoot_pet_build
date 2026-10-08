@@ -3,6 +3,7 @@ import os
 import platform
 import shutil
 import json
+import time
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QAction, QGuiApplication
@@ -32,9 +33,10 @@ from core.paths import get_internal_characters_path, get_user_data_path
 class DesktopPet(QWidget):
     # ---------------------------------
     # La pet: ventana translucida sin bordes
+    #
+    # Un solo gesto: el click cambia de animacion al instante. No hay doble
+    # click ni temporizadores; ver core/interaction.py.
     # ---------------------------------
-    DOUBLE_CLICK_MS = 250
-
     def __init__(self, character_path):
         super().__init__()
 
@@ -58,13 +60,7 @@ class DesktopPet(QWidget):
         # Toda la decision de gestos vive en core/interaction.py, sin Qt
         self._interaction = ClickDragResolver(
             drag_threshold=QApplication.startDragDistance(),
-            double_click_ms=self.DOUBLE_CLICK_MS,
         )
-
-        # El click simple se retrasa para no comerse el doble click
-        self._click_timer = QTimer(self)
-        self._click_timer.setSingleShot(True)
-        self._click_timer.timeout.connect(self.cycle_state)
 
         self.current_state = None
         self.animation = None
@@ -384,7 +380,13 @@ class DesktopPet(QWidget):
             self._drag_offset = self._press_pos - self.frameGeometry().topLeft()
             self._compositor_move = False
 
-            self._interaction.press(self._xy(self._press_pos), self._xy(self.pos()))
+            pos = self._xy(self._press_pos)
+            ventana = self._xy(self.pos())
+
+            self._interaction.press(pos, ventana)
+
+            _debug(f"press  pos={pos} ventana={ventana} "
+                   f"umbral={self._interaction.drag_threshold}")
 
             # Qt documenta llamar a startSystemMove() DESDE el press, no desde
             # el move: es cuando el puntero esta realmente agarrado. Si se
@@ -429,7 +431,11 @@ class DesktopPet(QWidget):
             return
 
         if (event.buttons() & Qt.LeftButton) and self._press_pos is not None:
-            gesto = self._interaction.move(self._xy(event.globalPosition().toPoint()))
+            pos = self._xy(event.globalPosition().toPoint())
+            gesto = self._interaction.move(pos)
+
+            _debug(f"move   pos={pos} dist={self._interaction.press_pos} "
+                   f"-> {gesto.value}")
 
             # Arrastre manual: solo funciona donde move() significa algo
             # (X11/Windows). En Wayland es un no-op.
@@ -440,79 +446,29 @@ class DesktopPet(QWidget):
 
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.LeftButton:
-            gesto = self._interaction.release(self._xy(self.pos()))
+            ventana = self._xy(self.pos())
+            gesto = self._interaction.release(ventana)
+
+            _debug(f"release ventana={ventana} -> {gesto.value}")
 
             self._press_pos = None
             self._drag_offset = None
             self._compositor_move = False
 
+            # Inmediato, sin temporizadores: nada que pueda tragarse el click.
             if gesto == Gesture.CLICK:
-                # Se retrasa porque Qt avisa del doble click despues del
-                # primer release; si no, el click simple y el doble se pisarian.
-                self._click_timer.start(self._interaction.double_click_ms)
+                self.cycle_state()
 
         super().mouseReleaseEvent(event)
 
     def mouseDoubleClickEvent(self, event):
+        # El doble click no hace nada por si mismo: solo se traga el release
+        # sobrante para que no cuente como un segundo click.
         if event.button() == Qt.LeftButton:
-            if self._interaction.double_click() == Gesture.DOUBLE_CLICK:
-                self._click_timer.stop()
-                self.trigger_reaction()
+            self._interaction.ignore_next_release()
+            _debug("doble click (sin accion propia)")
+
         super().mouseDoubleClickEvent(event)
-
-    # ---------------------------------
-    # Reacciones: click y doble click
-    # ---------------------------------
-    def trigger_reaction(self):
-        """Doble click: la reaccion del personaje (boop o similar).
-
-        Antes se llamaba change_state("boop") a pelo y solo fang tiene un
-        estado llamado "boop": en los otros cinco personajes el doble click no
-        hacia absolutamente nada. Ahora se busca el estado de un solo uso que
-        tenga el personaje y, si no hay ninguno, se repite el actual con un
-        pequeño salto de tamaño para que se note.
-        """
-        if self.has_reaction_state():
-            self.change_state(self.pick_reaction_state())
-        else:
-            self.play_pop()
-
-    def has_reaction_state(self):
-        states = self.character.config["states"]
-
-        if "boop" in states:
-            return True
-
-        return any(not datos.get("loop", True) for datos in states.values())
-
-    def pick_reaction_state(self):
-        states = self.character.config["states"]
-
-        if "boop" in states:
-            return "boop"
-
-        for nombre, datos in states.items():
-            if not datos.get("loop", True):
-                return nombre
-
-        return self.current_state
-
-    # ---------------------------------
-    def play_pop(self):
-        """Salto rapido de tamaño: da una reaccion visible en personajes que
-        solo tienen una animacion en bucle, donde repetirla es indistinguible
-        de seguir viéndola."""
-        original = self.scaling.scale
-        objetivo = min(original * 1.12, self.scaling.max_scale)
-
-        if objetivo <= original:
-            return
-
-        self.scaling.scale = objetivo
-        QTimer.singleShot(160, lambda: self._restore_scale(original))
-
-    def _restore_scale(self, original):
-        self.scaling.scale = original
 
     def wheelEvent(self, event):
         delta = event.angleDelta().y()
@@ -644,9 +600,9 @@ class DesktopPet(QWidget):
 def _debug(message):
     """Log de diagnóstico. Con SNOOT_LOG=1 se guarda en el directorio de datos.
 
-    Lo usa el arrastre en Wayland: como la app no puede posicionarse a si
-    misma, si el compositor no acepta el arrastre la pet se queda clavada y no
-    hay forma de saberlo sin ver el registro.
+    Registra cada gesto del raton (press/move/release) con la distancia y la
+    decision que se ha tomado: es lo que deja ver que llega de verdad desde el
+    raton en vez de adivinarlo.
     """
     print(f"[pet] {message}")
 
@@ -662,7 +618,7 @@ def _debug(message):
             os.remove(log_path)
 
         with open(log_path, "a", encoding="utf-8") as f:
-            f.write(message + "\n")
+            f.write(f"{time.strftime('%H:%M:%S')} {message}\n")
     except OSError:
         pass
 

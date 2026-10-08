@@ -1,12 +1,3 @@
-"""Decision de gestos: ¿esto ha sido un click, un doble click o un arrastre?
-
-Sin widgets, sin Qt, sin ventanas: solo numeros. Toda la logica de umbral vive
-aqui, de forma que se puede probar sin montar la GUI y sin adivinar.
-
-El widget (desktop_pet.py) se limita a traducir los eventos del raton a llamadas
-de esta clase y a ejecutar lo que devuelva.
-"""
-
 from enum import Enum
 from time import monotonic
 
@@ -14,32 +5,32 @@ from time import monotonic
 class Gesture(Enum):
     NONE = "none"
     CLICK = "click"
-    DOUBLE_CLICK = "double_click"
     DRAG = "drag"
 
 
 class ClickDragResolver:
     # ---------------------------------
-    def __init__(self, drag_threshold=12, double_click_ms=250):
+    # ¿Click o arrastre?
+    #
+    # No hay doble click ni temporizadores a proposito. Antes el click se
+    # retrasaba 250ms para poder distinguirlo de un doble click, y cualquier
+    # evento que se perdiera dejaba el click sin hacer nada. Aqui solo hay dos
+    # estados y nada que pueda tragarse una pulsacion.
+    #
+    # Recibe tuplas (x, y): sin Qt y sin ventanas, para poder probarlo solo.
+    # ---------------------------------
+    def __init__(self, drag_threshold=12):
         # El umbral nativo de la plataforma (Qt da ~10px) con margen. Por debajo
         # hay que considerarlo temblor de la mano: en un click real el raton
         # siempre se mueve unos pixeles.
         self.drag_threshold = max(12, drag_threshold)
 
-        # Margen para el doble click: menos que esto, dos clicks seguidos se
-        # tratarian como uno; mas que esto y el click tarda en reaccionar.
-        self.double_click_ms = double_click_ms
+        # Un segundo release (el del doble click) no debe contar como otro click.
+        # Es temporal y no un flag permanente: si ese release no llegara nunca,
+        # con un flag se quedarian muertos todos los clicks siguientes.
+        self.ignore_release_until = 0.0
 
-        self._press_pos = None
-        self._press_window_pos = None
-        self._moved = False
-
-        # Momento hasta el que un click ya está atendido por un doble click.
-        # Es temporal a proposito: con un flag permanent, si el release final
-        # del doble click no llegaba (pasa en cuanto un compositor se come un
-        # evento) el flag se quedaba puesto y TODOS los clicks posteriores
-        # quedaban muertos para siempre.
-        self._consumed_until = 0.0
+        self.reset()
 
     # ---------------------------------
     @staticmethod
@@ -73,9 +64,9 @@ class ClickDragResolver:
         return Gesture.DRAG if self._moved else Gesture.NONE
 
     # ---------------------------------
-    def double_click(self):
-        self._consumed_until = monotonic() + (self.double_click_ms / 1000.0)
-        return Gesture.DOUBLE_CLICK
+    def ignore_next_release(self):
+        """El release sobrante de un doble click no debe contar como click."""
+        self.ignore_release_until = monotonic() + 0.2
 
     # ---------------------------------
     def release(self, window_pos=None):
@@ -92,10 +83,10 @@ class ClickDragResolver:
 
         if moved:
             gesture = Gesture.DRAG
-        elif monotonic() < self._consumed_until:
-            gesture = Gesture.NONE      # el doble click ya se ha atendido
+        elif monotonic() < self.ignore_release_until:
+            gesture = Gesture.NONE      # release sobrante de un doble click
         else:
-            gesture = Gesture.CLICK     # puede ser doble click: lo decide el timer
+            gesture = Gesture.CLICK
 
         self.reset()
 

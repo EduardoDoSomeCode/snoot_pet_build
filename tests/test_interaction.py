@@ -3,8 +3,8 @@
     python tests/test_interaction.py
 """
 import os
-import time
 import sys
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -65,28 +65,27 @@ r.move((600, 500))
 comprobar("ventana movida por el compositor cuenta como arrastre",
           r.release((260, 100)), Gesture.DRAG)
 
-print("\n=== doble click ===")
+print("\n=== doble click (el release sobrante no cuenta) ===")
 r = ClickDragResolver()
 r.press((500, 500), (100, 100))
-gesto1 = r.release((100, 100))          # primer click: se encola
-comprobar("primer click devuelve CLICK", gesto1, Gesture.CLICK)
-comprobar("doble click", r.double_click(), Gesture.DOUBLE_CLICK)
+comprobar("primer release", r.release((100, 100)), Gesture.CLICK)
+r.ignore_next_release()
 r.press((500, 500), (100, 100))
-comprobar("el segundo release no encola otro click",
+comprobar("el segundo release no es otro click",
           r.release((100, 100)), Gesture.NONE)
 
 print("\n=== doble click sin release final ===")
-# Si el release final del doble click no llega (un compositor puede comerse un
-# evento), con un flag permanente todos los clicks posteriores quedarian
-# muertos para siempre. El bloqueo es temporal y se caduca solo.
-r = ClickDragResolver(double_click_ms=120)
+# Si ese release sobrante no llegara nunca, con un flag permanente todos los
+# clicks siguientes quedarian muertos. El bloqueo es temporal y se caduca solo.
+r = ClickDragResolver()
 r.press((500, 500), (100, 100))
 r.release((100, 100))
-r.double_click()
-# sin el segundo release...
+r.ignore_next_release()
+# ...sin el segundo release
 
-time.sleep(0.25)                        # ...el bloqueo caduca
+time.sleep(0.3)
 
+r = ClickDragResolver()
 r.press((500, 500), (100, 100))
 comprobar("click sigue vivo tras doble click sin release final",
           r.release((100, 100)), Gesture.CLICK)
