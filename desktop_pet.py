@@ -598,16 +598,23 @@ class DesktopPet(QWidget):
 
 
 def _debug(message):
-    """Log de diagnóstico. Con SNOOT_LOG=1 se guarda en el directorio de datos.
+    """Log de diagnóstico, solo con SNOOT_LOG=1.
 
     Registra cada gesto del raton (press/move/release) con la distancia y la
     decision que se ha tomado: es lo que deja ver que llega de verdad desde el
     raton en vez de adivinarlo.
-    """
-    print(f"[pet] {message}")
 
+    Antes escribia en stdout siempre, no solo con SNOOT_LOG=1. Cada movimiento
+    del raton sobre la pet pasaba por un print en el hilo de la interfaz, asi
+    que al arrastrar salia una linea por evento (ruidoso al lanzarla desde una
+    terminal) sin coste para nadie. Ahora el print va detras del mismo flag que
+    el archivo, que es lo que se quiere: depurar o no depurar, pero no por
+    defecto.
+    """
     if os.environ.get("SNOOT_LOG") != "1":
         return
+
+    print(f"[pet] {message}")
 
     try:
         log_path = os.path.join(os.path.dirname(get_user_data_path()),
