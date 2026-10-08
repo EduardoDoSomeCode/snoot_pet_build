@@ -253,6 +253,21 @@ core/paths.py             rutas de datos (portable / APPDATA / XDG)
 packaging/                AppRun, .desktop, spec única y scripts de empaquetado
 ```
 
+## Plataformas
+
+| | Always on top | Notas |
+|---|---|---|
+| Linux + XWayland | sí, de verdad | Backend `xcb`: `_NET_WM_STATE_ABOVE` |
+| Linux + Wayland nativo | no | xdg-shell no tiene keep-above |
+| Linux sin XWayland | no | Arranca igual en Wayland nativo, con aviso |
+| Windows | sí | `WindowStaysOnTopHint` va nativo |
+| macOS | sí | Va nativo, y `LSUIElement` la saca del Dock |
+
+En Windows y macOS no se toca el backend: el ajuste `platform` se guarda en un
+único `settings.json` que comparten las plataformas, así que en Windows sigue
+valiendo `"xcb"` y hay que descartarlo explícitamente — el plugin `xcb` no
+existe ahí y pedirlo impide que arranque la ventana.
+
 ## Empaquetar
 
 Hay una sola spec, `snoot-pet.spec`, y da el build one-dir para las cuatro
@@ -284,9 +299,14 @@ Notas:
 - Se distribuye un `AppRun` propio porque algunas versiones de `appimagetool` no lo
   generan y el AppImage queda sin él (no arranca).
 - `packaging/trim_qt_libs.sh` quita 21 MB de QML/Quick/Pdf que viajan en el
-  AppImage y no se cargan nunca, y se ejecuta dentro de `build_appimage.sh`. Solo
-  en Linux: en Windows y macOS las librerías son `.dll` y el recorte no está
-  verificado ahí. El AppImage queda en ~79 MB.
+  AppImage y no se cargan nunca, y se ejecuta dentro de `build_appimage.sh`. El
+  AppImage queda en ~79 MB.
+- **El recorte es solo de Linux.** En Windows las DLL van en `PySide6\*.dll` (no
+  en un `lib/` como en Linux) y Qt las plugins las carga con `LoadLibrary` por
+  nombre, así que sin una ejecución real en esa plataforma no se puede
+  comprobar. En Windows hay ~19 MB de Qt6Quick/Qt6Qml/Qt6Pdf/etc. quitables; en
+  macOS, parecido. Se pueden quitar cuando alguien pueda probar el `.exe`
+  primero.
 - El `.deb` se apoya en que el bundle lleva Qt, libxcb, libxkbcommon y X11
   dentro, así que solo depende de `libc6`. En una sesión Wayland hace falta
   XWayland instalado, que es lo que permite el always on top.

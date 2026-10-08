@@ -1,4 +1,5 @@
 import os
+import platform
 import sys
 from typing import NamedTuple
 
@@ -45,7 +46,7 @@ def xwayland_available(env=None):
     return True
 
 
-def choose_platform(choice, env=None):
+def choose_platform(choice, env=None, system=None):
     """Decide el backend de Qt ANTES de crear la QApplication.
 
     En Linux lo importante: xdg-shell no tiene ningún request de "keep above",
@@ -61,6 +62,23 @@ def choose_platform(choice, env=None):
 
     Pura: no toca os.environ. Devuelve el motivo para poder avisar.
     """
+    # "xcb" y "wayland" son backends de Linux. En Windows y macOS el nombre del
+    # backend es otro ("windows", "cocoa") y el plugin xcb no viene ni
+    # instalado: pedirlo ahi hace que Qt no pueda crear ventana y la app no
+    # arranca. El ajuste se guarda en un unico settings.json que comparten
+    # todas las plataformas, asi que en Windows sigue valiendo "xcb" y hay que
+    # descartarlo explicitamente en vez de fiarse del valor.
+    #
+    # No se comprueba con env: se pasa platform.system() para poder probarlo.
+    system = platform.system() if system is None else system
+
+    if system != "Linux":
+        return PlatformDecision(
+            False,
+            f"{system} no usa backends de Qt con nombre: se deja que Qt "
+            f"elija el suyo",
+        )
+
     # Solo se acepta el valor exacto: si el ajuste viene maltypeado (un bool
     # de una version anterior, por ejemplo), quedarse sin hacer nada lleva a Qt
     # a Wayland nativo en silencio, que es justo lo que no queremos.
@@ -82,9 +100,9 @@ def choose_platform(choice, env=None):
     return PlatformDecision(True, "hay XWayland: backend xcb fijado")
 
 
-def configure_platform(choice, env=None):
+def configure_platform(choice, env=None, system=None):
     """Aplica la decision de choose_platform al entorno y la devuelve."""
-    decision = choose_platform(choice, env)
+    decision = choose_platform(choice, env, system)
 
     if decision.forced_xcb:
         os.environ.setdefault("QT_QPA_PLATFORM", "xcb")

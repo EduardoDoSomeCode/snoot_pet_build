@@ -45,6 +45,13 @@ jobs:
             python "$t"
           done
 
+      # No abre ninguna ventana, pero si algo se rompe al importar, se ve
+      # antes de perder tiempo en los tres jobs de empaquetado.
+      - name: importa el modulo
+        run: |
+          export QT_QPA_PLATFORM=offscreen
+          python -c "import sys; sys.path.insert(0,'.'); import desktop_pet; print('importa bien')"
+
   # ---------------------------------------------------------------------
   # Linux: un solo build de PyInstaller, dos empaquetados.
   #
@@ -88,9 +95,9 @@ jobs:
           python -m PyInstaller snoot-pet.spec \
             --distpath build/dist --workpath build/work --noconfirm --clean
 
-      # Solo en Linux: en Windows y macOS las librerias son .dll y el recorte
-      # no se ha verificado ahi, asi que se dejan enteras. En Linux son 21 MB,
-      # y el script se niega a borrar nada de su lista protegida.
+      # Solo en Linux: en Windows y macOS las librerias son .dll / .dylib y el
+      # recorte no se ha verificado ahi, asi que se dejan enteras. En Linux son
+      # 21 MB, y el script se niega a borrar nada de su lista protegida.
       - name: quitar Qt que no se usa
         run: bash packaging/trim_qt_libs.sh build/dist/snoot-pet
 
@@ -173,6 +180,12 @@ jobs:
 
       # El portable es el mismo build one-dir, en zip. Se lleva tambien el
       # .exe suelto por si alguien lo prefiere sin comprimir.
+      #
+      # A diferencia de Linux, aqui NO se quitan las DLL de QML/Quick/Pdf: en
+      # Windows van en PySide6\*.dll y no en un subdirectorio lib, y los
+      # plugins los carga Qt con LoadLibrary por nombre. Sin una ejecucion real
+      # en Windows no se puede comprobar que no rompe nada, asi que se
+      # prefierere un .exe mas grande a uno que no arranca.
       - name: portable
         shell: pwsh
         run: |
@@ -246,6 +259,10 @@ jobs:
         run: |
           python -m PyInstaller snoot-pet.spec --distpath dist --workpath build --noconfirm --clean
 
+      # Igual que en Windows, aqui no se quitan las librerias de QML/Quick/Pdf:
+      # en macOS van dentro de PySide6/Qt/lib y no hay forma de comprobar en un
+      # runner de Linux que quitarlas no rompe nada.
+      #
       # Sin firmar, macOS lo trata como una app de unidentified developer.
       # Con firma ad-hoc al menos no aparece el aviso de "no se puede abrir
       # porque viene de un desarrollador desconocido" en muchas maquinas.

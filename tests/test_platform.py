@@ -56,6 +56,28 @@ d = choose_platform("xcb", env={"DISPLAY": "localhost:0"})
 comprobar("se fuerza xcb", d.forced_xcb, True)
 comprobar("el motivo lo confirma", "hay XWayland" in d.reason, True)
 
+print("\n=== Windows y macOS: nunca se pide xcb ===")
+# Este es el fallo que hacia que el build de Windows no arrancara: el ajuste
+# guardado dice "xcb" en todas las plataformas (es el unico settings.json), y
+# si se respeta a ciegas se le pide a Qt un plugin que en Windows no existe.
+for sistema in ("Windows", "Darwin"):
+    d = choose_platform("xcb", env={}, system=sistema)
+    comprobar(f"{sistema}: no fuerza xcb", d.forced_xcb, False)
+    comprobar(f"{sistema}: lo dice", sistema in d.reason, True)
+
+# Windows con un X server de Cygwin/WSL/Xmingponiendo DISPLAY: antes esto si
+# fuerza xcb, y en Windows el plugin xcb no existe.
+d = choose_platform(
+    "xcb",
+    env={"DISPLAY": "localhost:0.0", "SystemRoot": r"C:\Windows"},
+    system="Windows",
+)
+comprobar("Windows con DISPLAY tampoco fuerza xcb", d.forced_xcb, False)
+
+# Y al reves: en Linux si se respeta, que es lo que hace que funcione
+d = choose_platform("xcb", env={"DISPLAY": "localhost:0"}, system="Linux")
+comprobar("Linux si fuerza xcb", d.forced_xcb, True)
+
 print("\n=== wayland explicito se respeta ===")
 d = choose_platform("wayland", env={"DISPLAY": "localhost:0"})
 comprobar("no se fuerza xcb", d.forced_xcb, False)
