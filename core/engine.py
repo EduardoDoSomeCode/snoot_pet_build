@@ -20,10 +20,14 @@ def configure_platform(choice):
     El resto no se pierde: la transparencia sigue siendo alfa real por pixel y
     el arrastre manual con move() funciona en X11.
     """
+    # Solo se acepta el valor exacto: si el ajuste viene maltypeado (un bool
+    # de una version anterior, por ejemplo), quedarse sin hacer nada lleva a Qt
+    # a Wayland nativo en silencio, que es justo lo que no queremos.
     if choice != "xcb":
-        return
+        return False
 
     os.environ.setdefault("QT_QPA_PLATFORM", "xcb")
+    return True
 
 
 def claim_single_instance(app):

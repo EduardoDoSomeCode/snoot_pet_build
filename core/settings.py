@@ -30,8 +30,15 @@ class Settings:
 
             if isinstance(stored, dict):
                 for key, default in DEFAULTS.items():
-                    if key in stored:
+                    if key not in stored:
+                        continue
+
+                    # Mismo criterio que en set(): los booleanos se fuerzan,
+                    # el resto se respeta tal cual este guardado.
+                    if isinstance(default, bool):
                         self.data[key] = bool(stored[key])
+                    else:
+                        self.data[key] = stored[key]
         except (OSError, ValueError):
             # Sin archivo / corrupto → usamos los defaults
             pass
@@ -53,6 +60,14 @@ class Settings:
         return DEFAULTS.get(key, default)
 
     def set(self, key, value):
-        self.data[key] = bool(value)
+        # Solo se fuerzan a bool las claves que son booleanas de verdad.
+        # Antes se casteaba todo, y set("platform", "xcb") guardaba True: con
+        # ese valor la app no aplicaba el backend X11 y Qt se quedaba en
+        # Wayland nativo, donde no funcionan ni el arrastre manual ni el
+        # always on top.
+        if isinstance(DEFAULTS.get(key), bool):
+            value = bool(value)
+
+        self.data[key] = value
         self.save()
         return self.data[key]
