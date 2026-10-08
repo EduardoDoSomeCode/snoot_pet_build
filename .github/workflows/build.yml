@@ -34,16 +34,34 @@ jobs:
             requirements.txt
             requirements-dev.txt
 
-      - run: pip install -r requirements.txt -r requirements-dev.txt
+      # No se instala pyside6 aqui a proposito: las cuatro suites son logica
+      # pura y no lo necesitan. Instalar Qt en un runner sin GPU antes de
+      # probarlo es la forma de tener un fallo de entorno disfrazado de fallo
+      # de codigo (y al reves: un test que solo funciona porque habia Qt).
+      - run: pip install -r requirements-dev.txt
 
       - name: pruebas
         run: |
           set -e
-          export QT_QPA_PLATFORM=offscreen
           for t in tests/test_*.py; do
             echo "--- $t"
             python "$t"
           done
+
+      # Comprobacion explicita de lo de arriba: si alguno de los tests empieza
+      # a importar PySide6, falla aqui con un mensaje claro en vez de reventar
+      # despues con un ImportError de libEGL.
+      #
+      # grep -q para que el "exit 1" sea explicito: con grep sin -q, el exit
+      # status del if es el del grep, y al no encontrar nada seria 1 (fallo).
+      - name: las pruebas no deben importar Qt
+        run: |
+          set -e
+          if grep -nE "^[[:space:]]*(import|from)[[:space:]]+(PySide6|desktop_pet)" tests/test_*.py; then
+            echo "!! las pruebas importan Qt: no deberían"
+            exit 1
+          fi
+          echo "ninguna prueba importa Qt"
 
       # No abre ninguna ventana, pero si algo se rompe al importar, se ve
       # antes de perder tiempo en los tres jobs de empaquetado.

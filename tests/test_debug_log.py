@@ -14,9 +14,13 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # el archivo de verdad.
 HOMEFALSO = tempfile.mkdtemp()
 os.environ["HOME"] = HOMEFALSO
-os.environ["QT_QPA_PLATFORM"] = "offscreen"
 
-import desktop_pet  # noqa: E402
+# A proposito NO se importa desktop_pet: arrastra PySide6.QtGui, que va con
+# NEEDED de libEGL.so.1 (una libreria del sistema que no esta en un runner de
+# CI sin GPU). El log de gestos es logica pura y vive en core/debug_log.py,
+# precisamente para poder probarlo sin Qt. Antes de moverlo ahi, este test
+# fallaba al importar en GitHub Actions en vez de comprobar nada.
+import core.debug_log as debug_log  # noqa: E402
 
 fallos = 0
 total = 0
@@ -46,7 +50,7 @@ def disparar(valor, mensaje="press pos=(1, 2)"):
 
     salida = io.StringIO()
     with contextlib.redirect_stdout(salida):
-        desktop_pet._debug(mensaje)
+        debug_log.debug(mensaje)
 
     return salida.getvalue()
 

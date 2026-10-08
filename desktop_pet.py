@@ -27,6 +27,7 @@ from core.animation import AnimationPlayer
 from core.behavior import BehaviorScheduler
 from core.settings import Settings
 from core.window import WindowController
+from core.debug_log import debug as _debug
 from core.paths import get_internal_characters_path, get_user_data_path
 
 
@@ -618,39 +619,6 @@ class DesktopPet(QWidget):
                 character=self.character,
                 change_state_callback=self.change_state,
             )
-
-
-def _debug(message):
-    """Log de diagnóstico, solo con SNOOT_LOG=1.
-
-    Registra cada gesto del raton (press/move/release) con la distancia y la
-    decision que se ha tomado: es lo que deja ver que llega de verdad desde el
-    raton en vez de adivinarlo.
-
-    Antes escribia en stdout siempre, no solo con SNOOT_LOG=1. Cada movimiento
-    del raton sobre la pet pasaba por un print en el hilo de la interfaz, asi
-    que al arrastrar salia una linea por evento (ruidoso al lanzarla desde una
-    terminal) sin coste para nadie. Ahora el print va detras del mismo flag que
-    el archivo, que es lo que se quiere: depurar o no depurar, pero no por
-    defecto.
-    """
-    if os.environ.get("SNOOT_LOG") != "1":
-        return
-
-    print(f"[pet] {message}")
-
-    try:
-        log_path = os.path.join(os.path.dirname(get_user_data_path()),
-                                "pet.log")
-
-        # No dejar que crezca sin limite
-        if os.path.exists(log_path) and os.path.getsize(log_path) > 65536:
-            os.remove(log_path)
-
-        with open(log_path, "a", encoding="utf-8") as f:
-            f.write(f"{time.strftime('%H:%M:%S')} {message}\n")
-    except OSError:
-        pass
 
 
 def parse_args():

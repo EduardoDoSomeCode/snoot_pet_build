@@ -3,7 +3,13 @@ import platform
 import sys
 from typing import NamedTuple
 
-from PySide6.QtWidgets import QApplication
+# PySide6 NO se importa aqui a proposito. choose_platform(), xwayland_available()
+# y choose_platform() son logica pura y se prueban sin Qt (tests/test_platform.py),
+# pero importar QtWidgets en el module scope arrastra QtGui, que va con NEEDED de
+# libEGL.so.1: una libreria del sistema que en un runner de CI sin GPU no
+# existe, y hacia que las pruebas fallaran al importar en vez de al probar nada.
+#
+# Lo que si necesita Qt se importa dentro de la funcion que lo usa.
 
 APP_NAME = "Snoot pet"
 
@@ -138,6 +144,8 @@ def claim_single_instance(app):
 
 
 def create_app(argv=None):
+    from PySide6.QtWidgets import QApplication
+
     app = QApplication.instance()
 
     if app is None:
