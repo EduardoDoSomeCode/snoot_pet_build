@@ -1,0 +1,22 @@
+{
+    "name": "Rosa",
+    "default_state": "neutral",
+    "base_size": 600,
+    "states": {
+        "neutral": {
+            "file": "rosa_neutral.gif",
+            "fps": 8,
+            "loop": true,
+            "behavior_weight": 1
+        }
+    },
+    "behavior": {
+        "enabled": true,
+        "interval_min": 6,
+        "interval_max": 14
+    },
+    "scale_limits": {
+        "min": 0.4,
+        "max": 2.0
+    }
+}

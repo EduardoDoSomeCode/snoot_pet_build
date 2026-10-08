@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Snoot pet
+Comment=Desktop pet that lives on your desktop
+Exec=snoot-pet
+Icon=snoot-pet
+Categories=Utility;Amusement;
+Terminal=false
+StartupNotify=false

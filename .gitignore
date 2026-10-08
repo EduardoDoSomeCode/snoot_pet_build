@@ -1,0 +1,22 @@
+# Entorno roto heredado + entornos virtuales
+venv/
+.venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Builds
+build/
+dist/
+*.spec.bak
+
+# AppImage generado (92 MB, se reconstruye con packaging/build_appimage.sh)
+*.AppImage
+AppDir/
+squashfs-root/
+
+# Capturas de depuración que se han ido dejando en la raíz
+/*.png

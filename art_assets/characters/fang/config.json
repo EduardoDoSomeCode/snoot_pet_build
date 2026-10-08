@@ -1,0 +1,115 @@
+{
+    "name": "Fang",
+    "default_state": "neutral",
+    "base_size": 600,
+    "states": {
+        "neutral": {
+            "file": "fang_neutral.gif",
+            "fps": 12,
+            "loop": true,
+            "behavior_weight": 5
+        },
+        "boop": {
+            "file": "fang_boop_full.gif",
+            "fps": 18,
+            "loop": false,
+            "next_state": "neutral"
+        },
+        "angry_boop": {
+            "file": "angery_boop.gif",
+            "fps": 18,
+            "loop": false,
+            "next_state": "neutral"
+        },
+        "bout2boop": {
+            "file": "fangbout2boop.gif",
+            "fps": 16,
+            "loop": false,
+            "next_state": "boop"
+        },
+        "blushy_boop1": {
+            "file": "blushy_boop1.gif",
+            "fps": 16,
+            "loop": false,
+            "next_state": "neutral"
+        },
+        "blushy_boop2": {
+            "file": "blushy_boop2.gif",
+            "fps": 16,
+            "loop": false,
+            "next_state": "neutral"
+        },
+        "blushy_boop3": {
+            "file": "blushy_boop3.gif",
+            "fps": 16,
+            "loop": false,
+            "next_state": "neutral"
+        },
+        "guitar": {
+            "file": "fang_guitar.gif",
+            "fps": 14,
+            "loop": true,
+            "behavior_weight": 2
+        },
+        "phone": {
+            "file": "fang_phone.gif",
+            "fps": 14,
+            "loop": true,
+            "behavior_weight": 2
+        },
+        "raymba": {
+            "file": "fang_raymba.gif",
+            "fps": 14,
+            "loop": true,
+            "behavior_weight": 1
+        },
+        "glasspress": {
+            "file": "fang_glasspress.gif",
+            "fps": 18,
+            "loop": true,
+            "next_state": "neutral",
+            "behavior_weight": 2
+        },
+        "feathermess": {
+            "file": "fang_feathermess.gif",
+            "fps": 16,
+            "loop": true,
+            "next_state": "neutral",
+            "behavior_weight": 1
+        },
+        "nuggies": {
+            "file": "fang_nuggies.gif",
+            "fps": 14,
+            "loop": false,
+            "next_state": "neutral",
+            "behavior_weight": 1
+        },
+        "anticipating_nug": {
+            "file": "anticipating_nug.gif",
+            "fps": 16,
+            "loop": true,
+            "behavior_weight": 1
+        },
+        "anticipating_nug2": {
+            "file": "anticipating_nug2.gif",
+            "fps": 16,
+            "loop": true,
+            "behavior_weight": 1
+        },
+        "blankiemode": {
+            "file": "fang_blankiemode.gif",
+            "fps": 12,
+            "loop": true,
+            "behavior_weight": 1
+        }
+    },
+    "behavior": {
+        "enabled": true,
+        "interval_min": 5,
+        "interval_max": 12
+    },
+    "scale_limits": {
+        "min": 0.4,
+        "max": 1.8
+    }
+}

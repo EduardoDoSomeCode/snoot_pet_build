@@ -1,0 +1,29 @@
+{
+    "name": "Stella",
+    "default_state": "neutral",
+    "base_size": 600,
+    "states": {
+        "neutral": {
+            "file": "stella_sit.gif",
+            "fps": 8,
+            "loop": true,
+            "behavior_weight": 1
+        },
+        "angry": {
+            "file": "stella_happy.gif",
+            "fps": 10,
+            "loop": true,
+            "weight": 2,
+            "behavior_weight": 1
+        }
+    },
+    "behavior": {
+        "enabled": true,
+        "interval_min": 6,
+        "interval_max": 14
+    },
+    "scale_limits": {
+        "min": 0.4,
+        "max": 2.0
+    }
+}

@@ -1,0 +1,8 @@
+#!/bin/sh
+# AppRun del AppImage: lanza la pet desde el directorio montado.
+#
+# appimagetool deberia generarlo solo a partir del .desktop, pero en algunas
+# versiones no lo hace (el AppImage queda sin AppRun y no arranca), asi que
+# lo Bringamos nosotros.
+HERE="$(dirname "$(readlink -f "$0")")"
+exec "$HERE/snoot-pet" "$@"
