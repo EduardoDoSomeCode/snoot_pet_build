@@ -352,20 +352,63 @@ jobs:
       - name: localizar el .app
         run: |
           set -e
-          APP="$(find dist -maxdepth 1 -name '*.app' -type d | head -1)"
+          # Se busca en recursivo, no solo a profundidad 1: si PyInstaller cambia de
+          # sitio el bundle, esto sigue encontrandolo.
+          APP="$(find dist -name '*.app' -type d 2>/dev/null | head -1)"
           if [ -z "$APP" ]; then
-            echo "!! PyInstaller no ha generado ninguna .app en dist/"
-            echo "  lo que hay en dist:"
-            ls -la dist || true
+            echo "!! no se ha encontrado ninguna .app"
+            echo "  dist/ contiene:"
+            ls -la dist 2>/dev/null || echo "    (no existe dist/)"
+            echo "  .app en cualquier parte del repo:"
+            find . -name '*.app' -type d 2>/dev/null | head -5 || true
+            echo "  .app en build/:"
+            find build -name '*.app' -type d 2>/dev/null | head -5 || true
             exit 1
           fi
           echo "APP=$APP" >> "$GITHUB_ENV"
           echo "encontrada: $APP"
-          test -f "$APP/Contents/MacOS/snoot-pet"
-          test -d "$APP/Contents/Resources/art_assets"
+
+          # Cada comprobacion con su propio mensaje, para que el log diga cual ha
+          # fallado en vez de solo "exit 1".
+          # El nombre del ejecutable se lee del Info.plist en vez de suponerlo, y
+          # art_assets se BUSCA en vez de escribir su ruta.
+          #
+          # La ruta exacta dentro del bundle la decide PyInstaller y no es la
+          # misma en todas las versiones: segun contents_directory, los datos
+          # pueden acabar en Contents/Resources/ o en
+          # Contents/Resources/_internal/. Afirmar una ruta concreta es
+          # afirmar sobre las tripas de PyInstaller, y eso no se puede
+          # comprobar desde Linux. Buscar es igual de estricto (si no esta,
+          # falla) y no depende de la version.
+          EXE_NAME="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP/Contents/Info.plist")"
+          echo "  CFBundleExecutable: $EXE_NAME"
+
+          if [ ! -f "$APP/Contents/MacOS/$EXE_NAME" ]; then
+            echo "!! falta $APP/Contents/MacOS/$EXE_NAME"
+            echo "  Contents/MacOS contiene:"
+            ls -la "$APP/Contents/MacOS" 2>/dev/null || true
+            exit 1
+          fi
+          echo "  ok: ejecutable dentro del bundle"
+
+          PERSONAJES="$(find "$APP" -type d -name characters 2>/dev/null | head -1)"
+          if [ -z "$PERSONAJES" ]; then
+            echo "!! no hay ningun directorio characters dentro del bundle"
+            echo "  estructura (2 niveles):"
+            find "$APP" -maxdepth 3 -type d 2>/dev/null | head -20 || true
+            exit 1
+          fi
+          echo "  ok: personajes en $PERSONAJES ($(ls "$PERSONAJES" | wc -l) personajes)"
+
           # LSUIElement es lo que hace que no salga en el Dock
-          grep -q LSUIElement "$APP/Contents/Info.plist" && echo "LSUIElement presente"
-          /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$APP/Contents/Info.plist"
+          if ! grep -q LSUIElement "$APP/Contents/Info.plist"; then
+            echo "!! LSUIElement no esta en Info.plist: la pet saldra en el Dock"
+            exit 1
+          fi
+          echo "  ok: LSUIElement presente"
+
+          /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" \
+            "$APP/Contents/Info.plist"
 
       # Sin firmar, macOS lo trata como una app de unidentified developer.
       # Con firma ad-hoc al menos no aparece el aviso de "no se puede abrir
@@ -376,6 +419,35 @@ jobs:
           codesign --force --deep --sign - "$APP" 2>&1 || \
             echo "aviso: la firma ad-hoc fallo, se sigue sin firmar"
           xattr -cr "$APP" 2>/dev/null || true
+
+      # Corre siempre, aunque el paso anterior haya fallado: asi el log enseña la
+      # estructura real del bundle y no hay que adivinarla. Es lo que faltaba
+      # para poder arreglar esto sin tener macOS a mano.
+      - name: diagnostico del bundle
+        if: always()
+        run: |
+          echo "=== dist/ ==="
+          ls -la dist 2>/dev/null || echo "  (no existe dist/)"
+          echo
+          echo "=== .app encontradas ==="
+          find dist -name '*.app' -type d 2>/dev/null || true
+          echo
+          for a in $(find dist -name '*.app' -type d 2>/dev/null); do
+            echo "=== estructura de $a (directorios, 3 niveles) ==="
+            find "$a" -maxdepth 3 -type d 2>/dev/null | head -40
+            echo
+            echo "=== Contents/MacOS ==="
+            ls -la "$a/Contents/MacOS" 2>/dev/null || true
+            echo
+            echo "=== Info.plist: claves que nos importan ==="
+            for k in CFBundleExecutable CFBundleIdentifier CFBundleName LSUIElement; do
+              printf '  %-22s ' "$k"
+              /usr/libexec/PlistBuddy -c "Print :$k" "$a/Contents/Info.plist" 2>/dev/null || echo "(no esta)"
+            done
+            echo
+            echo "=== art_assets / characters dentro del bundle ==="
+            find "$a" -type d \( -name art_assets -o -name characters \) 2>/dev/null || true
+          done
 
       - name: zip y dmg
         run: |
