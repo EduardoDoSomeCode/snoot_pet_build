@@ -1,5 +1,6 @@
 import os
 import sys
+from typing import NamedTuple
 
 from PySide6.QtWidgets import QApplication
 
@@ -9,25 +10,86 @@ APP_NAME = "Snoot pet"
 INSTANCE_SOCKET = "snoot-pet-unica"
 
 
-def configure_platform(choice):
-    """Elige el backend de Qt ANTES de crear la QApplication.
+class PlatformDecision(NamedTuple):
+    """Lo que se ha decidido sobre el backend, y por que."""
+
+    forced_xcb: bool   # True = hemos fijado QT_QPA_PLATFORM=xcb
+    reason: str        # texto para diagnostico
+
+
+def xwayland_available(env=None):
+    """¿Hay un servidor X al que conectarse?
+
+    En una sesion Wayland normal lo que hay es XWayland, y la pet lo necesita
+    para el always on top. Pero XWayland no esta en todas partes: hay
+    instalaciones de GNOME y de distros minimas donde esta desactivado. Ahi,
+    forzar el backend xcb hacia que la app no abra nada en absoluto.
+
+    choose_platform() es pura (no toca os.environ), asi que esto se puede
+    probar sin cambiar el entorno del proceso.
+    """
+    env = os.environ if env is None else env
+    display = (env.get("DISPLAY") or "").strip()
+
+    if not display:
+        return False
+
+    # ":0", ":0.0" -> se puede comprobar el socket de verdad
+    if display.startswith(":"):
+        numero = display[1:].split(".")[0]
+
+        if numero.isdigit():
+            return os.path.exists(f"/tmp/.X11-unix/X{numero}")
+
+    # "host:0" o por TCP: no hay socket local que mirar, se asume que hay
+    return True
+
+
+def choose_platform(choice, env=None):
+    """Decide el backend de Qt ANTES de crear la QApplication.
 
     En Linux lo importante: xdg-shell no tiene ningún request de "keep above",
     así que con el backend nativo de Wayland `Qt.WindowStaysOnTopHint` no hace
     nada y la pet se va detrás en cuanto se abre otra ventana. KWin sí honra
     `_NET_WM_STATE_ABOVE`, que es lo que usa el backend XWayland (xcb).
 
-    El resto no se pierde: la transparencia sigue siendo alfa real por pixel y
-    el arrastre manual con move() funciona en X11.
+    Pero xcb solo funciona si hay XWayland. Si no lo hay, quedarse sin hacer
+    nada no es lo mismo que antes: antes Qt elegia Wayland nativo en silencio y
+    la pet abria pero sin always on top; ahora, si el ajuste pide xcb y no hay
+    XWayland, se dice explicitamente en el motivo y la app sigue en Wayland
+    nativo en vez de no arrancar.
+
+    Pura: no toca os.environ. Devuelve el motivo para poder avisar.
     """
     # Solo se acepta el valor exacto: si el ajuste viene maltypeado (un bool
     # de una version anterior, por ejemplo), quedarse sin hacer nada lleva a Qt
     # a Wayland nativo en silencio, que es justo lo que no queremos.
     if choice != "xcb":
-        return False
+        return PlatformDecision(
+            False,
+            f"el ajuste de plataforma es {choice!r}, no se fuerza nada "
+            f"y Qt elige ({'Wayland nativo' if choice == 'wayland' else 'sin fijar'})",
+        )
 
-    os.environ.setdefault("QT_QPA_PLATFORM", "xcb")
-    return True
+    if not xwayland_available(env):
+        return PlatformDecision(
+            False,
+            "el ajuste pide XWayland pero no hay servidor X (DISPLAY vacio o "
+            "su socket no existe): se usa Wayland nativo y el always on top "
+            "NO funcionara",
+        )
+
+    return PlatformDecision(True, "hay XWayland: backend xcb fijado")
+
+
+def configure_platform(choice, env=None):
+    """Aplica la decision de choose_platform al entorno y la devuelve."""
+    decision = choose_platform(choice, env)
+
+    if decision.forced_xcb:
+        os.environ.setdefault("QT_QPA_PLATFORM", "xcb")
+
+    return decision
 
 
 def claim_single_instance(app):

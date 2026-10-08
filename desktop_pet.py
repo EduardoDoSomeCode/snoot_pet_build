@@ -96,6 +96,14 @@ class DesktopPet(QWidget):
             change_state_callback=self.change_state,
         )
 
+        # En que backend hemos acabado de verdad. Vale mas que el ajuste: si el
+        # ajuste pedia XWayland pero no lo habia, se ha decidido con lo que hay.
+        self.in_native_wayland = QGuiApplication.platformName() == "wayland"
+
+        # El always on top necesita _NET_WM_STATE_ABOVE, que es X11. En Wayland
+        # nativo xdg-shell no tiene keep-above, y en Windows/macOS va nativo.
+        self.topmost_supported = not self.in_native_wayland
+
         # Ventana: transparencia, "always on top" y modo capturable por OBS
         self.window_ctl = WindowController(
             self,
@@ -104,6 +112,13 @@ class DesktopPet(QWidget):
         )
 
         self.create_menu()
+
+    # ---------------------------------
+    def topmost_label(self):
+        if self.topmost_supported:
+            return "Always on Top"
+
+        return "Always on Top (not available on native Wayland)"
 
     # ---------------------------------
     # Cambio de estado
@@ -265,8 +280,16 @@ class DesktopPet(QWidget):
         self.menu.addSeparator()
 
         # Always on Top
-        self.topmost_action = QAction("Always on Top", self, checkable=True)
+        #
+        # En Windows y macOS esto va nativo. En Linux solo funciona por X11
+        # (_NET_WM_STATE_ABOVE): xdg-shell no tiene keep-above, asi que en
+        # Wayland nativo la pet se va detras en cuanto abres otra ventana. Si
+        # hemos acabado en Wayland nativo (porque el usuario lo pidio, o porque
+        # no habia XWayland), decirlo en el menu en vez de dejar un interruptor
+        # que parece funcionar y no hace nada.
+        self.topmost_action = QAction(self.topmost_label(), self, checkable=True)
         self.topmost_action.setChecked(self.settings.get("always_on_top"))
+        self.topmost_action.setEnabled(self.topmost_supported)
         self.topmost_action.triggered.connect(self.toggle_always_on_top)
         self.menu.addAction(self.topmost_action)
 
@@ -280,9 +303,9 @@ class DesktopPet(QWidget):
             self.native_wayland_action = QAction(
                 "Native Wayland (restart)", self, checkable=True
             )
-            self.native_wayland_action.setChecked(
-                self.settings.get("platform") != "xcb"
-            )
+            # El estado real, no el del ajuste: si no habia XWayland hemos
+            # acabado en Wayland nativo aunque el ajuste diga "xcb".
+            self.native_wayland_action.setChecked(self.in_native_wayland)
             self.native_wayland_action.triggered.connect(self.toggle_native_wayland)
             self.menu.addAction(self.native_wayland_action)
 
@@ -664,9 +687,20 @@ if __name__ == "__main__":
     args = parse_args()
 
     settings = Settings()
-    configure_platform(args.platform or settings.get("platform"))
+    platform_decision = configure_platform(args.platform or settings.get("platform"))
+    print(f"Backend: {platform_decision.reason}")
 
     app = create_app()
+
+    # Lo que se ha pedido en el menu tiene que concidir con lo que hay: si
+    # acabamos en Wayland nativo el always on top no va a funcionar y el menu
+    # lo dice, pero tambien merece un aviso por si se lanzo desde consola.
+    if app.platformName() == "wayland":
+        print(
+            "Aviso: en Wayland nativo el always on top no funciona "
+            "(xdg-shell no tiene keep-above). Se ve bien la pet, pero se ira "
+            "detras de otras ventanas."
+        )
 
     # Solo una pet a la vez: varias instancias "always on top" compiten por el
     # stacking de KWin y la que estas mirando acaba tapada por otra.
