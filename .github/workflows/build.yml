@@ -229,11 +229,38 @@ jobs:
       # plugins los carga Qt con LoadLibrary por nombre. Sin una ejecucion real
       # en Windows no se puede comprobar que no rompe nada, asi que se
       # prefierere un .exe mas grande a uno que no arranca.
+      # El portable es el build one-dir COMPLETO en un zip. No vale con
+      # copiar el .exe suelto: en one-dir casi todo (Python, PySide6, Qt,
+      # Pillow y los GIF) va en la carpeta _internal\ que va AL LADO. Un
+      # .exe sin ella son 2.5 MB que no pueden arrancar, porque no tienen ni
+      # el interprete. El zip si lleva la carpeta entera y funciona.
       - name: portable
         shell: pwsh
         run: |
           Compress-Archive -Path dist\snoot-pet\* -DestinationPath "SnootPet-portable-${{ steps.ver.outputs.value }}-x64.zip"
-          Copy-Item dist\snoot-pet\snoot-pet.exe "SnootPet-${{ steps.ver.outputs.value }}-x64.exe"
+
+          # Que no se cuele nada de la maquina del runner
+          if ((Get-Item "SnootPet-portable-${{ steps.ver.outputs.value }}-x64.zip").Length -lt 20MB) {
+            throw "el portable pesa menos de 20 MB: casi seguro que falta _internal"
+          }
+
+          # Y una comprobacion de verdad: que el zip contenga el runtime
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $zip = [System.IO.Compression.ZipFile]::OpenRead((Resolve-Path "SnootPet-portable-${{ steps.ver.outputs.value }}-x64.zip"))
+          try {
+            $nombres = $zip.Entries | ForEach-Object { $_.FullName }
+            $falta = @()
+            if (-not ($nombres -match "snoot-pet\.exe$")) { $falta += "snoot-pet.exe" }
+            if (-not ($nombres -match "_internal.*python3.*\.dll$")) { $falta += "python3xx.dll" }
+            if (-not ($nombres -match "_internal.*Qt6Core\.dll$")) { $falta += "Qt6Core.dll" }
+            if (-not ($nombres -match "_internal.*Qt6Widgets\.dll$")) { $falta += "Qt6Widgets.dll" }
+            if (-not ($nombres -match "art_assets.*characters")) { $falta += "art_assets" }
+            if ($falta.Count -gt 0) {
+              throw "el portable no lleva: $($falta -join ', ')"
+            }
+            Write-Host "el portable lleva $($zip.Entries.Count) entradas y el runtime completo"
+          }
+          finally { $zip.Dispose() }
 
       - name: instalador (Inno Setup)
         shell: pwsh
@@ -251,8 +278,8 @@ jobs:
         with:
           name: Snoot_pet-windows-x64
           path: |
-            SnootPet-*.exe
             SnootPet-*.zip
+            dist-installer\SnootPet-Setup-*.exe
 
   # ---------------------------------------------------------------------
   # macOS: .app en zip y .dmg.
