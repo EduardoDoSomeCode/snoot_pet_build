@@ -196,6 +196,21 @@ de la zona donde tienes la pet.
   `config.json` del personaje.
 - **Doble click**: siempre `boop`, y se queda ahí hasta el siguiente click.
 
+El umbral para distinguir click de arrastre es `max(12px, QApplication.startDragDistance())`,
+la distancia real del puntero (no manhattan, que en diagonal duplica el valor). Con
+4 px, el temblor normal de la mano al hacer click contaba como arrastre y el click se
+perdía:
+
+```
+temblor    0px   2px   4px   6px      40px
+resultado  click click click click   arrastre
+```
+
+Antes, con Wayland nativo, esto no pasaba: el arrastre lo llevaba el compositor y
+nuestro código no llegaba a marcar el movimiento. Al cambiar a XWayland para que el
+always on top funcionara, el arrastre pasó a ser manual y el umbral de 4 px empezó a
+comer clicks. Por eso el click funcionaba con Tk y dejo de funcionar aquí.
+
 ---
 
 ## Estructura

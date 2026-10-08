@@ -358,7 +358,13 @@ class DesktopPet(QWidget):
     # ---------------------------------
     # Eventos de ratón
     # ---------------------------------
-    DRAG_THRESHOLD = 4   # px de margen antes de considerar que es arrastre
+    @staticmethod
+    def drag_threshold():
+        # Umbral de arrastre: el nativo de la plataforma (Qt usa ~10px) con
+        # margen. Con 4px cualquier temblor de la mano al hacer click contaba
+        # como arrastre y el click se perdia; en un click real el raton siempre
+        # se mueve algo.
+        return max(12, QApplication.startDragDistance())
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
@@ -413,11 +419,12 @@ class DesktopPet(QWidget):
 
         if (event.buttons() & Qt.LeftButton) and self._press_pos is not None:
             if not self._moved:
-                delta = (
-                    event.globalPosition().toPoint() - self._press_pos
-                ).manhattanLength()
+                # Distancia real, no manhattan: en diagonal esta duplica el
+                # valor y un temblor normal acababa contando como arrastre
+                delta = event.globalPosition().toPoint() - self._press_pos
+                distancia = (delta.x() ** 2 + delta.y() ** 2) ** 0.5
 
-                if delta > self.DRAG_THRESHOLD:
+                if distancia > self.drag_threshold():
                     self._moved = True
 
             # Arrastre manual: solo funciona donde move() significa algo
@@ -431,10 +438,17 @@ class DesktopPet(QWidget):
         if event.button() == Qt.LeftButton:
             # "Se ha movido" se deduce comparando la posición de la ventana,
             # porque con arrastre del compositor no nos llegan los moves.
+            # La comparación lleva tolerancia: si no, el temblor de la mano
+            # al hacer click desplazaba 1-2px la ventana y el click se perdia.
             moved = getattr(self, "_moved", False)
             press_pos = getattr(self, "_press_window_pos", None)
-            if press_pos is not None and self.pos() != press_pos:
-                moved = True
+
+            if press_pos is not None:
+                delta = self.pos() - press_pos
+                umbral = self.drag_threshold()
+
+                if (delta.x() ** 2 + delta.y() ** 2) ** 0.5 > umbral:
+                    moved = True
 
             # Qt entrega el doble click como press/release/dblclick/release:
             # el segundo release volvería a encolar un cambio de estado que
