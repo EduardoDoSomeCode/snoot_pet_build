@@ -1,8 +1,56 @@
+import os
 import sys
 
 from PySide6.QtWidgets import QApplication
 
 APP_NAME = "Snoot pet"
+
+# Nombre del socket local que usa el guard de instancia unica
+INSTANCE_SOCKET = "snoot-pet-unica"
+
+
+def configure_platform(choice):
+    """Elige el backend de Qt ANTES de crear la QApplication.
+
+    En Linux lo importante: xdg-shell no tiene ningún request de "keep above",
+    así que con el backend nativo de Wayland `Qt.WindowStaysOnTopHint` no hace
+    nada y la pet se va detrás en cuanto se abre otra ventana. KWin sí honra
+    `_NET_WM_STATE_ABOVE`, que es lo que usa el backend XWayland (xcb).
+
+    El resto no se pierde: la transparencia sigue siendo alfa real por pixel y
+    el arrastre manual con move() funciona en X11.
+    """
+    if choice != "xcb":
+        return
+
+    os.environ.setdefault("QT_QPA_PLATFORM", "xcb")
+
+
+def claim_single_instance(app):
+    """Devuelve el QLocalServer si esta es la unica instancia, None si ya hay
+    otra corriendo.
+
+    Sin esto se acumulan varias pets, todas "always on top" compitiendo por el
+    stacking de KWin: la que estas mirando puede quedar tapada por otra y
+    parece que la pet desaparece.
+    """
+    from PySide6.QtNetwork import QLocalServer, QLocalSocket
+
+    probe = QLocalSocket()
+    probe.connectToServer(INSTANCE_SOCKET)
+
+    if probe.waitForConnected(400):
+        probe.abort()
+        return None
+
+    # Socket de una instancia que murio sin limpiarlo
+    QLocalServer.removeServer(INSTANCE_SOCKET)
+
+    server = QLocalServer(app)
+    if not server.listen(INSTANCE_SOCKET):
+        return None
+
+    return server
 
 
 def create_app(argv=None):

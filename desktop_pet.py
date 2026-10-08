@@ -1,5 +1,6 @@
 import argparse
 import os
+import platform
 import shutil
 import json
 
@@ -17,7 +18,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from core.engine import create_app
+from core.engine import create_app, configure_platform, claim_single_instance
 from core.scaling import ScalingManager
 from core.character_loader import Character
 from core.animation import AnimationPlayer
@@ -288,10 +289,38 @@ class DesktopPet(QWidget):
         self.capture_action.triggered.connect(self.toggle_capture_mode)
         self.menu.addAction(self.capture_action)
 
+        if platform.system() == "Linux":
+            self.native_wayland_action = QAction(
+                "Native Wayland (restart)", self, checkable=True
+            )
+            self.native_wayland_action.setChecked(
+                self.settings.get("platform") != "xcb"
+            )
+            self.native_wayland_action.triggered.connect(self.toggle_native_wayland)
+            self.menu.addAction(self.native_wayland_action)
+
         self.menu.addSeparator()
         self.menu.addAction("Import Character", self.import_character)
         self.menu.addSeparator()
         self.menu.addAction("Quit", QApplication.instance().quit)
+
+    # ---------------------------------
+    # Backend Wayland nativo vs XWayland
+    # ---------------------------------
+    def toggle_native_wayland(self):
+        # Con xdg-shell no hay keep-above, asi que en nativo la pet acaba
+        # detras de cualquier ventana nueva.
+        native = self.native_wayland_action.isChecked()
+        self.settings.set("platform", "wayland" if native else "xcb")
+
+        QMessageBox.information(
+            self,
+            "Restart needed",
+            "The change applies the next time the pet starts.\n\n"
+            "On native Wayland the pet can go behind other windows: the "
+            "Wayland protocol has no 'keep above' request, so the "
+            "'Always on Top' option only works with the XWayland backend.",
+        )
 
     # ---------------------------------
     # Listar personajes disponibles
@@ -614,6 +643,14 @@ def parse_args():
         action="store_true",
         help="Inicia sin el always on top",
     )
+    parser.add_argument(
+        "--platform",
+        choices=["xcb", "wayland"],
+        default=None,
+        help="Backend de Qt en Linux. xcb (XWayland) es el que soporta "
+             "always on top de verdad; wayland es nativo pero se queda detras "
+             "de las ventanas nuevas",
+    )
 
     return parser.parse_args()
 
@@ -621,7 +658,16 @@ def parse_args():
 if __name__ == "__main__":
     args = parse_args()
 
+    settings = Settings()
+    configure_platform(args.platform or settings.get("platform"))
+
     app = create_app()
+
+    # Solo una pet a la vez: varias instancias "always on top" compiten por el
+    # stacking de KWin y la que estas mirando acaba tapada por otra.
+    if claim_single_instance(app) is None:
+        print("Ya hay una pet corriendo. Cierrala antes de abrir otra.")
+        raise SystemExit(0)
 
     character_path = os.path.join(get_internal_characters_path(), args.character)
     if not os.path.isdir(character_path):

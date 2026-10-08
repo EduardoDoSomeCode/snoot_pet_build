@@ -30,22 +30,45 @@ También se pueden forzar al arrancar:
 python desktop_pet.py --capture                 # arranca en modo captura
 python desktop_pet.py --no-always-on-top        # arranca sin always on top
 python desktop_pet.py --character liz           # otro personaje
+python desktop_pet.py --platform wayland        # fuerza Wayland nativo
 ```
 
-### Siempre encima, sí o sí
+### Siempre encima: por qué en Linux usa XWayland
 
-El flag `Qt.WindowStaysOnTopHint` por sí solo no aguanta: cualquier app que se abra
-maximizada, o un juego en fullscreen, se queda por delante. `core/window.py` tiene un
-watchdog que lo re-afirma cada 1,5 s con `raise_()`.
+En Linux la pet usa por defecto el backend **XWayland (xcb)**, no el nativo de Wayland.
+No es una preferencia estética: **el protocolo xdg-shell no tiene ningún request de
+"keep above"**, así que con el backend nativo `Qt.WindowStaysOnTopHint` no hace nada y
+la pet se va detrás en cuanto se abre otra ventana (pestaña, diálogo, maximized…).
 
-En X11 hay un detalle extra: Qt aplica el hint al mapear la ventana, pero si cambias
-los flags con la ventana ya visible (por ejemplo al activar el modo captura) el WM se
-queda sin `_NET_WM_STATE_ABOVE` y la pet vuelve a ser una ventana normal. Por eso, solo
-bajo X11, el watchdog manda además el `_ClientMessage` de `_NET_WM_STATE_ABOVE` a mano
-(vía ctypes). En Wayland no hace falta: el compositor mantiene el hint.
+KWin sí honra `_NET_WM_STATE_ABOVE`, que es lo que usa el backend X11. Con el, la pet se
+mantiene encima de verdad:
 
-Ojo: en fullscreen **exclusivo** (no el fullscreen de ventana) ningún compositor
-puede dibujar encima, así que la pet no se verá hasta salir de ese modo.
+```
+_NET_WM_STATE(ATOM) = _NET_WM_STATE_ABOVE, _NET_WM_STATE_STAYS_ON_TOP
+```
+
+Y no se pierde nada por el cambio:
+
+- **Transparencia**: sigue siendo alfa real por pixel (23,9 % de píxeles transparentes,
+  esquinas a `(0,0,0,0)`), también sobre X11.
+- **Arrastre**: en X11 `move()` sí funciona, así que el arrastre manual es válido.
+- **OBS**: *Window Capture (X11)* es justo la vía que se recomienda más abajo.
+
+`core/window.py` tiene además un watchdog que re-afirma el estado cada 1,5 s, porque al
+cambiar los flags con la ventana ya visible (por ejemplo al activar el modo captura) el
+WM se queda sin el estado.
+
+Si prefieres nativo, menú → *Native Wayland (restart)*. Asumes que la pet puede quedar
+detrás de las ventanas nuevas.
+
+Ojo: en fullscreen **exclusivo** (no el fullscreen de ventana) ningún compositor puede
+dibujar encima, así que la pet no se verá hasta salir de ese modo.
+
+### Solo una pet a la vez
+
+La app reclama un socket local al arrancar: si ya hay otra instancia, esta sale con un
+aviso. Sin eso se acumulan varias pets, todas "always on top" compitiendo por el
+stacking de KWin, y la que estabas mirando acaba tapada por otra.
 
 ### Por qué la pet "no llegaba" al borde superior
 
@@ -102,20 +125,20 @@ Activa **Capture Mode** y en OBS añade una fuente de captura:
 - **Windows**: *Window Capture*. Si sale negro, marca *Use Windows Graphics Capture*;
   con `PrintWindow` las ventanas *layered* a veces no se capturan bien.
 - **macOS**: *Window Capture* funciona con ventanas sin bordes.
-- **Linux/X11** (launch both under X11):
+- **Linux**: la pet ya corre como cliente XWayland por defecto (ver "Siempre encima"),
+  así que basta con arrancar OBS también con backend X11 para que vea la ventana:
 
   ```bash
-  QT_QPA_PLATFORM=xcb obs-studio     # OBS con backend X11
-  QT_QPA_PLATFORM=xcb ./snoot-pet   # la pet tambien como cliente X11
+  QT_QPA_PLATFORM=xcb obs-studio
   ```
 
   En modo captura la ventana se declara `_NET_WM_WINDOW_TYPE_NORMAL` (OBS ignora las
   de tipo `UTILITY`, que es lo que Qt usa normalmente para una pet).
 
-- **Linux/Wayland**: OBS no puede capturar ventanas concretas, solo la pantalla.
-  Usa *Display Capture* (o PipeWire) y recorta en OBS. La pet ya sale con transparencia
-  correcta, pero el fondo será el que tengas detrás; si necesitas recorte limpio,
-  Chroma Key sobre una escena de color conocido.
+- **Linux con la pet en Wayland nativo** (`--platform wayland`): OBS no puede capturar
+  ventanas concretas, solo la pantalla. Usa *Display Capture* (o PipeWire) y recorta en
+  OBS. La pet sale con transparencia correcta, pero el fondo será el que tengas detrás;
+  si necesitas recorte limpio, Chroma Key sobre una escena de color conocido.
 
 Alternativa que funciona en cualquier caso: *Display Capture* + *Crop/Filter* alrededor
 de la zona donde tienes la pet.

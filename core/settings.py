@@ -7,6 +7,10 @@ from core.paths import get_settings_path
 DEFAULTS = {
     "always_on_top": True,   # pet por encima de otros programas
     "capture_mode": False,   # ventana capturable por OBS (sin override-redirect)
+    # Backend de Qt en Linux. "xcb" (XWayland) es el unico donde el
+    # always on top funciona de verdad; "wayland" deja la pet en nativo pero
+    # sin keep-above.
+    "platform": "xcb",
 }
 
 
