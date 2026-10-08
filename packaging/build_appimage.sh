@@ -44,6 +44,12 @@ chmod +x "$APPDIR/AppRun"
 
 cp "$HERE/snoot-pet.desktop" "$APPDIR/snoot-pet.desktop"
 
+# PyInstaller se lleva todo el directorio lib de Qt. Los excludes del spec
+# quitan los modulos de Python, pero las librerias nativas de QML/Quick/Pdf se
+# quedan y no se cargan nunca (~20 MB).
+echo "==> quitando librerias de Qt sin usar"
+bash "$HERE/trim_qt_libs.sh" "$APPDIR"
+
 "$VENV/bin/python" - "$ROOT/fangneutral.ico" "$APPDIR/snoot-pet.png" <<'PY'
 import sys
 from PIL import Image
