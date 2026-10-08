@@ -186,6 +186,18 @@ Activa **Capture Mode** y en OBS añade una fuente de captura:
 Alternativa que funciona en cualquier caso: *Display Capture* + *Crop/Filter* alrededor
 de la zona donde tienes la pet.
 
+### Click y doble click
+
+- **Click**: avanza por los estados que se reproducen en bucle (`neutral`, `guitar`,
+  `phone`…). Los de un solo uso (`boop`, `blushy_*`…) quedan fuera a propósito: en fang
+  son 7 de 16 y estaban al principio de la lista, así que los primeros clicks caían en
+  un boop de 0,2 s que luego volvía solo a `neutral` y desde fuera parecía que no
+  pasaba nada. Se pueden volver a incluir con `"cycle_one_shots": true` en el
+  `config.json` del personaje.
+- **Doble click**: siempre `boop`, y se queda ahí hasta el siguiente click.
+
+---
+
 ## Estructura
 
 ```

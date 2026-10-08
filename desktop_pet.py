@@ -65,7 +65,8 @@ class DesktopPet(QWidget):
         self.current_state = None
         self.animation = None
         self.state_list = list(self.character.config["states"].keys())
-        self.state_index = 0
+        self.cycle_list = self.build_cycle_list()
+        self.cycle_index = 0
 
         # Layout sin margenes para que el alfa llegue hasta el borde
         layout = QVBoxLayout(self)
@@ -147,16 +148,35 @@ class DesktopPet(QWidget):
     # ---------------------------------
     # Estados y escala
     # ---------------------------------
+    def build_cycle_list(self):
+        # Estados por los que pasa el click.
+        #
+        # Los de un solo uso (loop=false) se quedan fuera: en fang son 7 de 16
+        # y estan al principio, asi que los primeros clicks caian en un boop de
+        # 0,2s que luego volvia solo a neutral. Desde fuera parecia que el click
+        # no hacia nada. Se pueden volver a incluir con "cycle_one_shots": true
+        # en el config.json del personaje.
+        states = self.character.config["states"]
+        incluir = self.character.config.get("cycle_one_shots", False)
+
+        lista = [
+            nombre
+            for nombre, datos in states.items()
+            if incluir or datos.get("loop", True)
+        ]
+
+        return lista or list(states.keys())
+
     def cycle_state(self):
-        if not self.state_list:
+        if not self.cycle_list:
             return
 
         # 🔥 Pausar behavior mientras usuario interactúa
         if hasattr(self, "behavior") and self.behavior:
             self.behavior.stop()
 
-        self.state_index = (self.state_index + 1) % len(self.state_list)
-        next_state = self.state_list[self.state_index]
+        self.cycle_index = (self.cycle_index + 1) % len(self.cycle_list)
+        next_state = self.cycle_list[self.cycle_index]
 
         self.change_state(next_state)
 
@@ -209,7 +229,8 @@ class DesktopPet(QWidget):
 
         # 🔥 Actualizar lista de estados
         self.state_list = list(self.character.config["states"].keys())
-        self.state_index = 0
+        self.cycle_list = self.build_cycle_list()
+        self.cycle_index = 0
 
         # Estado inicial
         default_state = self.character.config["default_state"]
@@ -346,6 +367,7 @@ class DesktopPet(QWidget):
             self._press_window_pos = self.pos()
             self._moved = False
             self._compositor_move = False
+            self._double_clicked = False
 
             # Qt documenta llamar a startSystemMove() DESDE el press, no desde
             # el move: es cuando el puntero esta realmente agarrado. Si se
@@ -414,16 +436,22 @@ class DesktopPet(QWidget):
             if press_pos is not None and self.pos() != press_pos:
                 moved = True
 
+            # Qt entrega el doble click como press/release/dblclick/release:
+            # el segundo release volvería a encolar un cambio de estado que
+            # pisaría el boop del doble click medio segundo después.
+            double_clicked = getattr(self, "_double_clicked", False)
+
             self._press_pos = None
             self._drag_offset = None
             self._press_window_pos = None
             self._moved = False
             self._compositor_move = False
+            self._double_clicked = False
 
             # Un click simple cambia de estado. Se retrasa un poco porque Qt
             # avisa del doble click después del primer release, y sin esta
             # espera el boop se comía dos cambios de estado.
-            if not moved:
+            if not moved and not double_clicked:
                 self._click_timer.start(self.DOUBLE_CLICK_MS)
 
         super().mouseReleaseEvent(event)
